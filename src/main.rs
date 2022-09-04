@@ -1,11 +1,11 @@
 use std::fs::File;
 use std::io::{Write, Read};
-use indexmap::IndexMap;
 use csv::Error;
 use serde::{
   Serialize, 
   Deserialize
 };
+use std::collections::HashMap;
 // DenseMatrix wrapper around Vec
 use smartcore::linalg::naive::dense_matrix::DenseMatrix;
 // Random Forest
@@ -95,6 +95,7 @@ impl MBTI {
 }
 
 type Post = Vec<String>;
+type Dictionary = HashMap<String, f64>;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Sample {
@@ -143,81 +144,94 @@ fn load_data() -> Vec<Sample> {
 }
 
 fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
-  let mut x_set: Vec<Post> = Vec::new();
-  let mut y_set: Vec<MBTI> = Vec::new();
-
-  for sample in training_set {
-    for post in &sample.posts {
-      x_set.push(post.to_vec());
-      y_set.push(sample.indicator);
-    }
+  let fx = std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("x_matrix.bincode");
+  let fy = std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("y_matrix.bincode");
+  if let (Ok(mut fx), Ok(mut fy)) = (fx, fy) {
+    let mut buf = Vec::new();
+    fx.read_to_end(&mut buf).unwrap();
+    let x: Vec<Vec<f64>> = bincode::deserialize(&buf).unwrap();
+    buf.clear();
+    fy.read_to_end(&mut buf).unwrap();
+    let y: Vec<u8> = bincode::deserialize(&buf).unwrap();
+    return (x, y);
   }
-  println!("{} samples", x_set.len());
-
-  // Deterimine unique labels
-  let mut unique_labels: Vec<String> = Vec::new();
-  for label in y_set.iter() {
-    if !unique_labels.contains(&label.to_string()) {
-      unique_labels.push(label.to_string());
-    }
-  }
-  println!("{} unique labels", unique_labels.len());
-
-  let f = std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("dictionary.bincode");
-  let dictionary: IndexMap<String> = {
-    if let Ok(mut f) = f {
-      let mut buf = Vec::new();
-      f.read_to_end(&mut buf).unwrap();
-      let dictionary: IndexMap<String> = bincode::deserialize(&buf).unwrap();
-      dictionary
-    }
-    else {
-      // Create a dictionary indexing unique tokens.
-      let mut dictionary: IndexMap<String> = Vec::new();
-      for post in x_set.clone() {
-        for token in post {
-          dictionary.push(token);
-        }
+  else {
+    let mut x_set: Vec<Post> = Vec::new();
+    let mut y_set: Vec<MBTI> = Vec::new();
+  
+    for sample in training_set {
+      for post in &sample.posts {
+        x_set.push(post.to_vec());
+        y_set.push(sample.indicator);
       }
-      println!("Saving dictionary...");
-      let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open("dictionary.bincode");
-      let dictionary_bytes = bincode::serialize(&dictionary).unwrap();
-      f.and_then(|mut f| f.write_all(&dictionary_bytes)).expect("Failed to write dictionary");
-      dictionary
     }
-  };
-
-  println!("Dictionary size: {}", dictionary.len());
-
-  // Create f64 matrices for x_set.
-  let mut x_matrix: Vec<Vec<f64>> = Vec::new();
-  for post in x_set {
-    let mut matrix: Vec<f64> = Vec::new();
-    for token in post {
-      let index: f64 = dictionary.get_index_of(&token).unwrap() as f64;
-      matrix.push(index);
+    println!("{} samples", x_set.len());
+  
+    // Deterimine unique labels
+    let mut unique_labels: Vec<String> = Vec::new();
+    for label in y_set.iter() {
+      if !unique_labels.contains(&label.to_string()) {
+        unique_labels.push(label.to_string());
+      }
     }
-    x_matrix.push(matrix);
+    println!("{} unique labels", unique_labels.len());
+  
+    let f = std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("dictionary.bincode");
+    let dictionary: Dictionary = {
+      if let Ok(mut f) = f {
+        let mut buf = Vec::new();
+        f.read_to_end(&mut buf).unwrap();
+        let dictionary: Dictionary = bincode::deserialize(&buf).unwrap();
+        dictionary
+      }
+      else {
+        // Create a dictionary indexing unique tokens.
+        let mut dictionary: Dictionary = HashMap::new();
+        for post in x_set.clone() {
+          for token in post {
+            dictionary.entry(token).or_insert(0f64);
+          }
+        }
+        println!("Saving dictionary...");
+        let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open("dictionary.bincode");
+        let dictionary_bytes = bincode::serialize(&dictionary).unwrap();
+        f.and_then(|mut f| f.write_all(&dictionary_bytes)).expect("Failed to write dictionary");
+        dictionary
+      }
+    };
+  
+    println!("Dictionary size: {}", dictionary.len());
+  
+    // Create f64 matrices for x_set.
+    let mut x_matrix: Vec<Vec<f64>> = Vec::new();
+    for post in x_set {
+      let mut matrix: Vec<f64> = Vec::new();
+      for token in post {
+        let index: f64 = dictionary.get_key_value(&token).unwrap().1.clone();
+        matrix.push(index);
+      }
+      x_matrix.push(matrix);
+    }
+  
+    // Create f64 matrices for y_set.
+    let mut y_matrix: Vec<u8> = Vec::new();
+    for indicator in y_set {
+      let index: u8 = indicator.indicator;
+      y_matrix.push(index);
+    }
+  
+    println!("Saving matrices...");
+    let x_matrix_bytes = bincode::serialize(&x_matrix).expect("Can not serialize the matrix");
+          File::create("x_matrix.bincode")
+            .and_then(|mut f| f.write_all(&x_matrix_bytes))
+            .expect("Can not persist x_matrix");
+    let y_matrix_bytes: Vec<u8> = bincode::serialize(&y_matrix).expect("Can not serialize the matrix");
+          File::create("y_matrix.bincode")
+            .and_then(|mut f| f.write_all(&y_matrix_bytes))
+            .expect("Can not persist y_matrix");
+  
+    (x_matrix, y_matrix)
   }
-
-  // Create f64 matrices for y_set.
-  let mut y_matrix: Vec<u8> = Vec::new();
-  for indicator in y_set {
-    let index: u8 = indicator.indicator;
-    y_matrix.push(index);
-  }
-
-  println!("Saving matrices...");
-  let x_matrix_bytes = bincode::serialize(&x_matrix).expect("Can not serialize the matrix");
-        File::create("x_matrix.bincode")
-          .and_then(|mut f| f.write_all(&x_matrix_bytes))
-          .expect("Can not persist x_matrix");
-  let y_matrix_bytes: Vec<u8> = bincode::serialize(&y_matrix).expect("Can not serialize the matrix");
-        File::create("y_matrix.bincode")
-          .and_then(|mut f| f.write_all(&y_matrix_bytes))
-          .expect("Can not persist y_matrix");
-
-  (x_matrix, y_matrix)
 }
 
 fn tally(y_matrix: &Vec<u8>) {
