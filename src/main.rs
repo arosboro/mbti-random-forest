@@ -99,7 +99,7 @@ struct Sample {
 
 fn tokenize(post: &str) -> Post {
   let tokenizer = VTextTokenizerParams::default().lang("en").build().unwrap();
-  let tokens: Vec<String> = tokenizer.tokenize(post).map(|s| s.to_owned()).collect();
+  let tokens: Vec<String> = tokenizer.tokenize(post).map(|s| s.to_lowercase().to_owned()).collect();
   tokens
 }
 
