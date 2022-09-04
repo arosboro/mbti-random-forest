@@ -262,17 +262,14 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>) {
   let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, true);
 
   // Random Forest
-  RandomForestRegressor::fit(&x_train, &y_train, Default::default())
-    .into_iter()
-    .for_each(|rf| {
-      let y_pred = rf.predict(&x_test).unwrap();
-      let accuracy = accuracy(&y_test, &y_pred);
-      println!("Accuracy: {}", accuracy);
-      let rf_bytes = bincode::serialize(&rf).expect("Can not serialize the model");
-      let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open("mbti_rf.model");
-      f.and_then(|mut f| f.write_all(&rf_bytes))
-        .expect("Can not persist model");
-    });
+  let y_hat_rf = RandomForestRegressor::fit(&x_train, &y_train, Default::default())
+    .and_then(|rf| {
+      let bytes_rf = bincode::serialize(&rf).unwrap();
+      File::create("mbti_rf.model")
+        .and_then(|mut f| f.write_all(&bytes_rf))
+        .expect("Can not persist random_forest");
+      rf.predict(&x_test)
+    }).unwrap();
   
   // Load the Model
   let rf: RandomForestRegressor<f64> = {
@@ -282,8 +279,11 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>) {
       .expect("Can not load model");
     bincode::deserialize(&buf).expect("Can not deserialize the model")
   };
-    
-  let y_hat_rf = rf.predict(&x_test).unwrap();
+  
+  let y_pred = rf.predict(&x_test).unwrap();
+  assert_eq!(y_hat_rf, y_pred, "Predictions should be the same");
+  // Calculate the accuracy
+  println!("Accuracy: {}", accuracy(&y_test, &y_pred));
   // Calculate test error
   println!("MSE: {}", mean_squared_error(&y_test, &y_hat_rf));
 }
