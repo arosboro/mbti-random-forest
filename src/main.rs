@@ -1,7 +1,10 @@
 use std::fs::File;
 use std::io::{Write, Read};
 use csv::Error;
-use serde::Deserialize;
+use serde::{
+  Serialize, 
+  Deserialize
+};
 // DenseMatrix wrapper around Vec
 use smartcore::linalg::naive::dense_matrix::DenseMatrix;
 // Random Forest
@@ -46,7 +49,7 @@ pub mod indicator {
   pub const ENTJ: u8 = mb_flag::E ^ mb_flag::N ^ mb_flag::T ^ mb_flag::J;
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Serialize, Deserialize, Clone)]
 struct MBTI {
   indicator: u8,
 }
@@ -92,6 +95,7 @@ impl MBTI {
 
 type Post = Vec<String>;
 
+#[derive(Debug, Serialize, Deserialize)]
 struct Sample {
   indicator: MBTI,
   posts: Vec<Post>,
@@ -103,26 +107,38 @@ fn tokenize(post: &str) -> Post {
   tokens
 }
 
-fn load_data() -> Result<Vec<Sample>, Error> {
-  let mut reader = csv::Reader::from_path("./mbti_1.csv").unwrap();
-  let mut samples: Vec<Sample> = Vec::new();
-  for row in reader.deserialize::<Row>() {
-    match row {
-      Ok(row) => {
-        let mut sample: Sample = Sample {
-          indicator: MBTI::from_string(&row.label),
-          posts: Vec::new(),
-        };
-        for post in row.posts.split("|||") {
-          sample.posts.push(tokenize(post));
-        }
-        // println!("{}: {} posts", sample.indicator.to_string(), sample.posts.len());
-        samples.push(sample)
-      },
-      Err(e) => println!("Error: {}", e),
-    }
+fn load_data() -> Vec<Sample> {
+  let f = std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("samples.bincode");
+  if let Ok(mut f) = f {
+    let mut buf = Vec::new();
+    f.read_to_end(&mut buf).unwrap();
+    let samples: Vec<Sample> = bincode::deserialize(&buf).unwrap();
+    return samples;
   }
-  Ok(samples)
+  else {
+    let mut reader = csv::Reader::from_path("./mbti_1.csv").unwrap();
+    let mut samples: Vec<Sample> = Vec::new();
+    for row in reader.deserialize::<Row>() {
+      match row {
+        Ok(row) => {
+          let mut sample: Sample = Sample {
+            indicator: MBTI::from_string(&row.label),
+            posts: Vec::new(),
+          };
+          for post in row.posts.split("|||") {
+            sample.posts.push(tokenize(post));
+          }
+          // println!("{}: {} posts", sample.indicator.to_string(), sample.posts.len());
+          samples.push(sample)
+        },
+        Err(e) => println!("Error: {}", e),
+      }
+    }
+    let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open("samples.bincode");
+    let samples_bytes = bincode::serialize(&samples).unwrap();
+    f.and_then(|mut f| f.write_all(&samples_bytes)).expect("Failed to write samples");
+    return samples;
+  }
 }
 
 fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
@@ -146,24 +162,33 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
   }
   println!("{} unique labels", unique_labels.len());
 
-
-  // Create a dictionary indexing unique tokens.
-  let mut dictionary: Vec<String> = Vec::new();
-  for post in x_set.clone() {
-    for token in post {
-      if !dictionary.contains(&token) {
-        dictionary.push(token);
-      }
+  let f = std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("dictionary.bincode");
+  let dictionary: Vec<String> = {
+    if let Ok(mut f) = f {
+      let mut buf = Vec::new();
+      f.read_to_end(&mut buf).unwrap();
+      let dictionary: Vec<String> = bincode::deserialize(&buf).unwrap();
+      dictionary
     }
-  }
-  println!("Dictionary size: {}", dictionary.len());
-  println!("Saving dictionary...");
-  // Save dictionary
-  let dictionary_bytes = bincode::serialize(&dictionary).expect("Can not serialize the model");
-        File::create("dictionary.bincode")
-          .and_then(|mut f| f.write_all(&dictionary_bytes))
-          .expect("Can not persist dictionary");
+    else {
+      // Create a dictionary indexing unique tokens.
+      let mut dictionary: Vec<String> = Vec::new();
+      for post in x_set.clone() {
+        for token in post {
+          if !dictionary.contains(&token) {
+            dictionary.push(token);
+          }
+        }
+      }
+      println!("Saving dictionary...");
+      let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open("dictionary.bincode");
+      let dictionary_bytes = bincode::serialize(&dictionary).unwrap();
+      f.and_then(|mut f| f.write_all(&dictionary_bytes)).expect("Failed to write dictionary");
+      dictionary
+    }
+  };
 
+  println!("Dictionary size: {}", dictionary.len());
 
   // Create f64 matrices for x_set.
   let mut x_matrix: Vec<Vec<f64>> = Vec::new();
@@ -251,7 +276,7 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>) {
 }
 
 fn main() -> Result<(), Error> {
-  let training_set: Vec<Sample> = load_data()?;
+  let training_set: Vec<Sample> = load_data();
   let (x_matrix, y_matrix) = normalize(&training_set);
   tally(&y_matrix);
   train(&x_matrix, &y_matrix);
