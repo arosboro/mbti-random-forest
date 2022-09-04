@@ -8,6 +8,9 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug executable 'mbti-random-forest'",
+            "program": "${workspaceRoot}/target/debug/mbti-random-forest",
+            "stopOnEntry":false,
+            "sourceLanguages": ["rust"],
             "cargo": {
                 "args": [
                     "build",
@@ -20,7 +23,7 @@
                 }
             },
             "args": [],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceRoot}"
         },
         {
             "type": "lldb",
@@ -39,7 +42,7 @@
                 }
             },
             "args": [],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceRoot}"
         }
     ]
 }

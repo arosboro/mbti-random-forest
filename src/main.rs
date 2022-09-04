@@ -9,7 +9,7 @@ use std::collections::HashMap;
 // DenseMatrix wrapper around Vec
 use smartcore::linalg::naive::dense_matrix::DenseMatrix;
 // Random Forest
-use smartcore::ensemble::random_forest_regressor::RandomForestRegressor;
+use smartcore::ensemble::random_forest_regressor::{RandomForestRegressor, RandomForestRegressorParameters};
 // Model performance
 use smartcore::metrics::{mean_squared_error, accuracy};
 use smartcore::model_selection::train_test_split;
@@ -111,51 +111,46 @@ fn tokenize(post: &str) -> Post {
 
 fn load_data() -> Vec<Sample> {
   let f = std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("samples.bincode");
-  if let Ok(mut f) = f {
-    let mut buf = Vec::new();
-    f.read_to_end(&mut buf).unwrap();
-    let samples: Vec<Sample> = bincode::deserialize(&buf).unwrap();
-    return samples;
-  }
-  else {
-    let mut reader = csv::Reader::from_path("./mbti_1.csv").unwrap();
-    let mut samples: Vec<Sample> = Vec::new();
-    for row in reader.deserialize::<Row>() {
-      match row {
-        Ok(row) => {
-          let mut sample: Sample = Sample {
-            indicator: MBTI::from_string(&row.label),
-            posts: Vec::new(),
-          };
-          for post in row.posts.split("|||") {
-            sample.posts.push(tokenize(post));
-          }
-          // println!("{}: {} posts", sample.indicator.to_string(), sample.posts.len());
-          samples.push(sample)
-        },
-        Err(e) => println!("Error: {}", e),
+  match f {
+    Ok(mut f) => {
+      println!("Loading samples...");
+      let mut buf = Vec::new();
+      f.read_to_end(&mut buf).unwrap();
+      let samples: Vec<Sample> = bincode::deserialize(&buf).unwrap();
+      samples
+    },
+    Err(_e) => {
+      println!("Saving samples...");
+      let mut reader = csv::Reader::from_path("./mbti_1.csv").unwrap();
+      let mut samples: Vec<Sample> = Vec::new();
+      for row in reader.deserialize::<Row>() {
+        match row {
+          Ok(row) => {
+            let mut sample: Sample = Sample {
+              indicator: MBTI::from_string(&row.label),
+              posts: Vec::new(),
+            };
+            for post in row.posts.split("|||") {
+              sample.posts.push(tokenize(post));
+            }
+            samples.push(sample)
+          },
+          Err(e) => println!("Error: {}", e),
+        }
       }
-    }
-    let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open("samples.bincode");
-    let samples_bytes = bincode::serialize(&samples).unwrap();
-    f.and_then(|mut f| f.write_all(&samples_bytes)).expect("Failed to write samples");
-    return samples;
+      let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open("samples.bincode");
+      let samples_bytes = bincode::serialize(&samples).unwrap();
+      f.and_then(|mut f| f.write_all(&samples_bytes)).expect("Failed to write samples");
+      samples
+    },
   }
 }
 
 fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
   let fx = std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("x_matrix.bincode");
   let fy = std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("y_matrix.bincode");
-  if let (Ok(mut fx), Ok(mut fy)) = (fx, fy) {
-    let mut buf = Vec::new();
-    fx.read_to_end(&mut buf).unwrap();
-    let x: Vec<Vec<f64>> = bincode::deserialize(&buf).unwrap();
-    buf.clear();
-    fy.read_to_end(&mut buf).unwrap();
-    let y: Vec<u8> = bincode::deserialize(&buf).unwrap();
-    return (x, y);
-  }
-  else {
+  let err_fx_fy = {
+    println!("Saving x and y matrices...");
     let mut x_set: Vec<Post> = Vec::new();
     let mut y_set: Vec<MBTI> = Vec::new();
   
@@ -178,25 +173,30 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
   
     let f = std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("dictionary.bincode");
     let dictionary: Dictionary = {
-      if let Ok(mut f) = f {
-        let mut buf = Vec::new();
-        f.read_to_end(&mut buf).unwrap();
-        let dictionary: Dictionary = bincode::deserialize(&buf).unwrap();
-        dictionary
-      }
-      else {
-        // Create a dictionary indexing unique tokens.
-        let mut dictionary: Dictionary = HashMap::new();
-        for post in x_set.clone() {
-          for token in post {
-            dictionary.entry(token).or_insert(0f64);
+      match f {
+        Ok(mut f) => {
+          println!("Loading dictionary...");
+          let mut buf = Vec::new();
+          f.read_to_end(&mut buf).unwrap();
+          let dictionary: Dictionary = bincode::deserialize(&buf).unwrap();
+          dictionary
+        },
+        Err(_e) => {
+          println!("Saving dictionary...");
+          // Create a dictionary indexing unique tokens.
+          let mut dictionary: Dictionary = HashMap::new();
+          for post in x_set.clone() {
+            for token in post {
+              if !dictionary.contains_key(&token) {
+                dictionary.insert(token, dictionary.len() as f64);
+              }
+            }
           }
-        }
-        println!("Saving dictionary...");
-        let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open("dictionary.bincode");
-        let dictionary_bytes = bincode::serialize(&dictionary).unwrap();
-        f.and_then(|mut f| f.write_all(&dictionary_bytes)).expect("Failed to write dictionary");
-        dictionary
+          let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open("dictionary.bincode");
+          let dictionary_bytes = bincode::serialize(&dictionary).unwrap();
+          f.and_then(|mut f| f.write_all(&dictionary_bytes)).expect("Failed to write dictionary");
+          dictionary
+        },
       }
     };
   
@@ -219,8 +219,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
       let index: u8 = indicator.indicator;
       y_matrix.push(index);
     }
-  
-    println!("Saving matrices...");
+
     let x_matrix_bytes = bincode::serialize(&x_matrix).expect("Can not serialize the matrix");
           File::create("x_matrix.bincode")
             .and_then(|mut f| f.write_all(&x_matrix_bytes))
@@ -229,12 +228,28 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
           File::create("y_matrix.bincode")
             .and_then(|mut f| f.write_all(&y_matrix_bytes))
             .expect("Can not persist y_matrix");
-  
     (x_matrix, y_matrix)
+  };
+
+  match (fx, fy) {
+    (Ok(mut fx), Ok(mut fy)) => {
+      println!("Loading x and y matrices...");
+      let mut x_buf = Vec::new();
+      let mut y_buf = Vec::new();
+      fx.read_to_end(&mut x_buf).unwrap();
+      fy.read_to_end(&mut y_buf).unwrap();
+      let x_matrix: Vec<Vec<f64>> = bincode::deserialize(&x_buf).unwrap();
+      let y_matrix: Vec<u8> = bincode::deserialize(&y_buf).unwrap();
+      (x_matrix, y_matrix)
+    },
+    (Ok(_), Err(_)) => err_fx_fy,
+    (Err(_), Ok(_)) => err_fx_fy,
+    (Err(_), Err(_)) => err_fx_fy,
   }
 }
 
 fn tally(y_matrix: &Vec<u8>) {
+  println!("Tallying...");
   println!("count ISTJ: {}", y_matrix.iter().filter(|&m| *m == indicator::ISTJ).count());
   println!("count ISFJ: {}", y_matrix.iter().filter(|&m| *m == indicator::ISFJ).count());
   println!("count INFJ: {}", y_matrix.iter().filter(|&m| *m == indicator::INFJ).count());
@@ -255,6 +270,7 @@ fn tally(y_matrix: &Vec<u8>) {
 
 
 fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>) {
+  println!("Training...");
   let x: DenseMatrix<f64> = DenseMatrix::from_2d_vec(&x_matrix);
   // These are our target class labels
   let y: Vec<f64> = y_matrix.into_iter().map(|x| *x as f64).collect();
@@ -262,16 +278,21 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>) {
   let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, true);
 
   // Random Forest
-  let y_hat_rf = RandomForestRegressor::fit(&x_train, &y_train, Default::default())
-    .and_then(|rf| {
-      let bytes_rf = bincode::serialize(&rf).unwrap();
-      File::create("mbti_rf.model")
-        .and_then(|mut f| f.write_all(&bytes_rf))
-        .expect("Can not persist random_forest");
-      rf.predict(&x_test)
-    }).unwrap();
+  let y_hat_rf = RandomForestRegressor::fit(&x_train, &y_train, {
+    let mut params = RandomForestRegressorParameters::default();
+    params.n_trees = 256;
+    params
+  }).and_then(|rf| {
+    println!("Serializing random forest...");
+    let bytes_rf = bincode::serialize(&rf).unwrap();
+    File::create("mbti_rf.model")
+      .and_then(|mut f| f.write_all(&bytes_rf))
+      .expect("Can not persist random_forest");
+    rf.predict(&x_test)
+  }).unwrap();
   
   // Load the Model
+  println!("Loading random forest...");
   let rf: RandomForestRegressor<f64> = {
     let mut buf: Vec<u8> = Vec::new();
     File::open("mbti_rf.model")
@@ -280,12 +301,16 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>) {
     bincode::deserialize(&buf).expect("Can not deserialize the model")
   };
   
+
+  println!("Validation of serialized model...");
   let y_pred = rf.predict(&x_test).unwrap();
-  assert_eq!(y_hat_rf, y_pred, "Predictions should be the same");
+  assert!(y_pred == y_hat_rf, "Model is inconsistent.");
+
   // Calculate the accuracy
+  println!("Metrics about model.");
   println!("Accuracy: {}", accuracy(&y_test, &y_pred));
   // Calculate test error
-  println!("MSE: {}", mean_squared_error(&y_test, &y_hat_rf));
+  println!("MSE: {}", mean_squared_error(&y_test, &y_pred));
 }
 
 fn main() -> Result<(), Error> {
