@@ -123,6 +123,7 @@ fn main() -> Result<(), Error> {
     }
   }
 
+  // Flatten samples as x_set and y_set.
   let mut x_set: Vec<Post> = Vec::new();
   let mut y_set: Vec<MBTI> = Vec::new();
   for sample in training_set {
@@ -132,6 +133,7 @@ fn main() -> Result<(), Error> {
     }
   }
 
+  // Create a dictionary indexing unique tokens.
   let mut dictionary: Vec<String> = Vec::new();
   for post in x_set.clone() {
     for token in post {
@@ -141,6 +143,7 @@ fn main() -> Result<(), Error> {
     }
   }
 
+  // Create f64 matrices for x_set.
   let mut x_matrix: Vec<Vec<f64>> = Vec::new();
   for post in x_set {
     let mut matrix: Vec<f64> = Vec::new();
@@ -151,6 +154,7 @@ fn main() -> Result<(), Error> {
     x_matrix.push(matrix);
   }
 
+  // Create f64 matrices for y_set.
   let mut y_matrix: Vec<f64> = Vec::new();
   for indicator in y_set {
     let index: f64 = indicator.indicator as f64;
