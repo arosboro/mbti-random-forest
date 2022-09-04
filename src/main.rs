@@ -102,7 +102,7 @@ fn tokenize(post: &str) -> Post {
 }
 
 fn main() -> Result<(), Error> {
-  let mut reader = csv::Reader::from_path("/Users/arosboro/projects/mbti-random-forest/mbti_1.csv").unwrap();
+  let mut reader = csv::Reader::from_path("./mbti_1.csv").unwrap();
   let mut training_set: Vec<Sample> = Vec::new();
   for row in reader.deserialize::<Row>() {
     match row {
