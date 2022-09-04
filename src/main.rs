@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::{Write, Read};
+use indexmap::IndexMap;
 use csv::Error;
 use serde::{
   Serialize, 
@@ -163,21 +164,19 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
   println!("{} unique labels", unique_labels.len());
 
   let f = std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("dictionary.bincode");
-  let dictionary: Vec<String> = {
+  let dictionary: IndexMap<String> = {
     if let Ok(mut f) = f {
       let mut buf = Vec::new();
       f.read_to_end(&mut buf).unwrap();
-      let dictionary: Vec<String> = bincode::deserialize(&buf).unwrap();
+      let dictionary: IndexMap<String> = bincode::deserialize(&buf).unwrap();
       dictionary
     }
     else {
       // Create a dictionary indexing unique tokens.
-      let mut dictionary: Vec<String> = Vec::new();
+      let mut dictionary: IndexMap<String> = Vec::new();
       for post in x_set.clone() {
         for token in post {
-          if !dictionary.contains(&token) {
-            dictionary.push(token);
-          }
+          dictionary.push(token);
         }
       }
       println!("Saving dictionary...");
@@ -195,7 +194,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
   for post in x_set {
     let mut matrix: Vec<f64> = Vec::new();
     for token in post {
-      let index: f64 = dictionary.iter().position(|x| x == &token).unwrap() as f64;
+      let index: f64 = dictionary.get_index_of(&token).unwrap() as f64;
       matrix.push(index);
     }
     x_matrix.push(matrix);
