@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::io::{Write, Read};
 use csv::Error;
 use serde::Deserialize;
 // DenseMatrix wrapper around Vec
@@ -5,7 +7,7 @@ use smartcore::linalg::naive::dense_matrix::DenseMatrix;
 // Random Forest
 use smartcore::ensemble::random_forest_regressor::RandomForestRegressor;
 // Model performance
-use smartcore::metrics::mean_squared_error;
+use smartcore::metrics::{mean_squared_error, accuracy};
 use smartcore::model_selection::train_test_split;
 use vtext::tokenize::*;
 
@@ -162,9 +164,27 @@ fn main() -> Result<(), Error> {
   let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, true);
   // Random Forest
   let y_hat_rf = RandomForestRegressor::fit(&x_train, &y_train, Default::default())
-      .and_then(|rf| rf.predict(&x_test)).unwrap();
+      .and_then(|rf| {
+        let rf_bytes = bincode::serialize(&rf).expect("Can not serialize the model");
+        File::create("mbti_rf.model")
+          .and_then(|mut f| f.write_all(&rf_bytes))
+          .expect("Can not persist model");
+        rf.predict(&x_test)
+      }).unwrap();
   // Calculate test error
   println!("MSE: {}", mean_squared_error(&y_test, &y_hat_rf));
+  // Load the model
+  let rf: RandomForestRegressor<f64> = {
+    let mut buf: Vec<u8> = Vec::new();
+    File::open("mbti_rf.model")
+      .and_then(|mut f| f.read_to_end(&mut buf))
+      .expect("Can not load model");
+    bincode::deserialize(&buf).expect("Can not deserialize the model")
+  };
+  // Predict Class Labels
+  let y_hat = rf.predict(&x).unwrap();
+  // Calculate Training Error
+  println!("accuracy: {}", accuracy(&y_test, &y_hat));
 
-  Ok(())
+  Ok(()) 
 }
