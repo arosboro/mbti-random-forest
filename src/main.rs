@@ -391,23 +391,10 @@ fn main() -> Result<(), Error> {
   let ensemble = [(ie_x_matrix, ie_y_matrix), (ns_x_matrix, ns_y_matrix), (tf_x_matrix, tf_y_matrix), (jp_x_matrix, jp_y_matrix)];
   // Train models
   for i in 0..4 {
-    println!{"Tally of [IE, NS, TF, JP]: {}", ["IE", "NS", "TF", "JP"][i]};
-    if i == 0 {
-      println!{"{} samples for I", ensemble[i].1.iter().filter(|&n| *n == 0u8).count()};
-      println!{"{} samples for E", ensemble[i].1.iter().filter(|&n| *n == 1u8).count()};
-    }
-    if i == 1 {
-      println!{"{} samples for N", ensemble[i].1.iter().filter(|&n| *n == 0u8).count()};
-      println!{"{} samples for S", ensemble[i].1.iter().filter(|&n| *n == 1u8).count()};
-    }
-    if i == 2 {
-      println!{"{} samples for T", ensemble[i].1.iter().filter(|&n| *n == 0u8).count()};
-      println!{"{} samples for F", ensemble[i].1.iter().filter(|&n| *n == 1u8).count()};
-    }
-    if i == 3 {
-      println!{"{} samples for J", ensemble[i].1.iter().filter(|&n| *n == 0u8).count()};
-      println!{"{} samples for P", ensemble[i].1.iter().filter(|&n| *n == 1u8).count()};
-    }
+    let tree = ["IE", "NS", "TF", "JP"][i];
+    println!{"Tally of [IE, NS, TF, JP]: {}", tree};
+    println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 0u8).count(), tree.chars().nth(0).unwrap()};
+    println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 1u8).count(), tree.chars().nth(1).unwrap()};
   }
   for i in 0..4 {
     println!{"Training [IE, NS, TF, JP]: {}", ["IE", "NS", "TF", "JP"][i]};
