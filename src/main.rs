@@ -342,7 +342,7 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, member_id: &str) {
   println!("Loading random forest...");
   let rf: RandomForestRegressor<f64> = {
     let mut buf: Vec<u8> = Vec::new();
-    File::open("mbti_rf.model")
+    File::open(format!("mbti_rf__{}.model", member_id))
       .and_then(|mut f| f.read_to_end(&mut buf))
       .expect("Can not load model");
     bincode::deserialize(&buf).expect("Can not deserialize the model")
