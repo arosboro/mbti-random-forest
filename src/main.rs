@@ -126,7 +126,8 @@ fn lemmatize(tokens: Post) -> Vec<String> {
 
 fn tokenize(post: &str) -> Vec<String> {
   let tokenizer = VTextTokenizerParams::default().lang("en").build().unwrap();
-  let tokens: Vec<String> = tokenizer.tokenize(post).map(|s| cleanup(&s.to_lowercase()).to_owned()).collect();
+  let mut tokens: Vec<String> = tokenizer.tokenize(post).map(|s| cleanup(&s.to_lowercase()).to_owned()).collect();
+  tokens = tokens.iter().filter(|s| s.trim().len() > 0).map(|s| s.trim().to_owned()).collect();
   lemmatize(tokens)
 }
 
