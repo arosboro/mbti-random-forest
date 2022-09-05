@@ -11,3 +11,6 @@ serde = {version = "1.0.144", features = ["derive"]}
 smartcore = { version = "0.2.1", features = ["serde"] }
 vtext = "0.2.0"
 bincode = "1.3.3"
+rand = "0.8.4"
+regex = "1"
+rust-stemmers = "1.2.0"

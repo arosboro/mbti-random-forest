@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fs::File;
 use std::io::{Write, Read};
 use std::path::Path;
@@ -15,6 +16,8 @@ use smartcore::ensemble::random_forest_regressor::{RandomForestRegressor, Random
 use smartcore::metrics::{mean_squared_error, accuracy};
 use smartcore::model_selection::train_test_split;
 use vtext::tokenize::*;
+use regex::Regex;
+use rust_stemmers::{Algorithm, Stemmer};
 
 #[derive(Debug, Deserialize)]
 struct Row {
@@ -101,13 +104,31 @@ type Dictionary = HashMap<String, f64>;
 #[derive(Debug, Serialize, Deserialize)]
 struct Sample {
   indicator: MBTI,
-  posts: Vec<Post>,
+  posts: Vec<Vec<String>>,
 }
 
-fn tokenize(post: &str) -> Post {
+fn cleanup(post: &str) -> String {
+  // removing links from text data
+  let url_re = Regex::new(r"(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w\.-]*)").unwrap();
+  let clean = url_re.replace_all(post, " ").to_string();
+  let stopword_re = Regex::new(r"[^a-zA-Z0-9]").unwrap();
+  return stopword_re.replace_all(&clean, " ").to_string()
+}
+
+fn lemmatize(tokens: Post) -> Vec<String> {
+  let mut lemmas = Vec::new();
+  for token in tokens {
+    let stemmer = Stemmer::create(Algorithm::English);
+    let lemma = stemmer.stem(&token);
+    lemmas.push(lemma.to_string());
+  }
+  lemmas
+}
+
+fn tokenize(post: &str) -> Vec<String> {
   let tokenizer = VTextTokenizerParams::default().lang("en").build().unwrap();
-  let tokens: Vec<String> = tokenizer.tokenize(post).map(|s| s.to_lowercase().to_owned()).collect();
-  tokens
+  let tokens: Vec<String> = tokenizer.tokenize(post).map(|s| cleanup(&s.to_lowercase()).to_owned()).collect();
+  lemmatize(tokens)
 }
 
 fn load_data() -> Vec<Sample> {
@@ -153,12 +174,12 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
   let path_fy = Path::new("./y_matrix.bincode");
   if !path_fx.exists() || !path_fy.exists() {
     println!("Saving x and y matrices...");
-    let mut x_set: Vec<Post> = Vec::new();
+    let mut x_set: Vec<Vec<String>> = Vec::new();
     let mut y_set: Vec<MBTI> = Vec::new();
   
     for sample in training_set {
       for post in &sample.posts {
-        x_set.push(post.to_vec());
+        x_set.push(post.to_owned());
         y_set.push(sample.indicator);
       }
     }
@@ -189,8 +210,8 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         let mut dictionary: Dictionary = HashMap::new();
         for post in x_set.clone() {
           for token in post {
-            if !dictionary.contains_key(&token) {
-              dictionary.insert(token, dictionary.len() as f64);
+            if !dictionary.contains_key(&token.to_string()) {
+              dictionary.insert(token.to_string(), dictionary.len() as f64);
             }
           }
         }
@@ -208,7 +229,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     for post in x_set {
       let mut matrix: Vec<f64> = Vec::new();
       for token in post {
-        let index: f64 = dictionary.get_key_value(&token).unwrap().1.clone();
+        let index: f64 = dictionary.get_key_value(&token.to_string()).unwrap().1.clone();
         matrix.push(index);
       }
       x_matrix.push(matrix);
@@ -264,37 +285,43 @@ fn tally(y_matrix: &Vec<u8>) {
 }
 
 
-fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>) {
+fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, member_id: &str) {
   println!("Training...");
   let x: DenseMatrix<f64> = DenseMatrix::from_2d_vec(&x_matrix);
   // These are our target class labels
   let y: Vec<f64> = y_matrix.into_iter().map(|x| *x as f64).collect();
-  // Split bag into training/test (80%/20%) TODO: Does it mater we do this every training cycle?
+  // Split bag into training/test (80%/20%)
   let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, true);
 
+  // RandomForestRegressorParameters {
+  //   /// Tree max depth. See [Decision Tree Regressor](../../tree/decision_tree_regressor/index.html)
+  //   max_depth: Some(16),
+  //   /// The minimum number of samples required to be at a leaf node. See [Decision Tree Regressor](../../tree/decision_tree_regressor/index.html)
+  //   min_samples_leaf: 256,
+  //   /// The minimum number of samples required to split an internal node. See [Decision Tree Regressor](../../tree/decision_tree_regressor/index.html)
+  //   min_samples_split: 128,
+  //   /// The number of trees in the forest.
+  //   n_trees: 4,
+  //   /// Number of random sample of predictors to use as split candidates.
+  //   m: Some(64),
+  //   /// Whether to keep samples used for tree generation. This is required for OOB prediction.
+  //   keep_samples: true,
+  //   /// Seed used for bootstrap sampling and feature selection for each tree.
+  //   seed: 42u64
+  // };
+
   // Random Forest
-  RandomForestRegressor::fit(&x_train, &y_train, {
-    let mut params = RandomForestRegressorParameters::default();
-    params.n_trees = 256;
-    params
-  }).iter()
-    .for_each(|rf| {
-      let bytes_rf = bincode::serialize(&rf).unwrap();
-      File::create("mbti_rf.model")
-        .and_then(|mut f| f.write_all(&bytes_rf))
-        .expect("Can not persist random_forest");
-      let y_pred: Vec<f64> = rf.predict(&x_test).unwrap();
-      println!("Random Forest accuracy: {}", accuracy(&y_test, &y_pred));
-      println!("MSE: {}", mean_squared_error(&y_test, &y_pred));
-    });
-  // }).and_then(|rf| {
-  //   println!("Serializing random forest...");
-  //   let bytes_rf = bincode::serialize(&rf).unwrap();
-  //   File::create("mbti_rf.model")
-  //     .and_then(|mut f| f.write_all(&bytes_rf))
-  //     .expect("Can not persist random_forest");
-  //   rf.predict(&x_test)
-  // }).unwrap();
+  for (iteration, rf) in RandomForestRegressor::fit(&x_train, &y_train, RandomForestRegressorParameters::default()).iter().enumerate() {
+    println!("Serializing random forest...");
+    let bytes_rf = bincode::serialize(&rf).unwrap();
+    File::create(format!("mbti_rf__{}.model", member_id))
+      .and_then(|mut f| f.write_all(&bytes_rf))
+      .expect(format!("Can not persist random_forest {}", member_id).as_str());
+    let y_pred: Vec<f64> = rf.predict(&x_test).unwrap();
+    println!("Iteration: {}", iteration);
+    println!("Random Forest accuracy: {}", accuracy(&y_test, &y_pred));
+    println!("MSE: {}", mean_squared_error(&y_test, &y_pred));
+  }
   
   // Load the Model
   println!("Loading random forest...");
@@ -309,6 +336,7 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>) {
 
   println!("Validation of serialized model...");
   let y_pred = rf.predict(&x_test).unwrap();
+  // assert!(y_hat_rf == y_pred, "Inconsistent models.");
 
   // Calculate the accuracy
   println!("Metrics about model.");
@@ -317,11 +345,60 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>) {
   println!("MSE: {}", mean_squared_error(&y_test, &y_pred));
 }
 
+fn build_sets(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, leaf_a: u8, leaf_b: u8) -> (Vec<Vec<f64>>, Vec<u8>) {
+  let mut x_matrix_set: Vec<Vec<f64>> = Vec::new();
+  let mut y_matrix_set: Vec<u8> = Vec::new();
+  for (i, y) in y_matrix.iter().enumerate() {
+    let left = *y & leaf_a != 0u8;
+    let right = *y & leaf_b != 0u8;
+    if left {
+      x_matrix_set.push(x_matrix[i].clone());
+      y_matrix_set.push(0u8);
+    } else if right {
+      x_matrix_set.push(x_matrix[i].clone());
+      y_matrix_set.push(1u8);
+    }
+    else {
+      continue;
+    }
+  }
+  (x_matrix_set, y_matrix_set)
+}
+
 fn main() -> Result<(), Error> {
   let training_set: Vec<Sample> = load_data();
   let (x_matrix, y_matrix) = normalize(&training_set);
   tally(&y_matrix);
-  train(&x_matrix, &y_matrix);
+  // Build sets for an ensemble of models
+  let (ie_x_matrix, ie_y_matrix) = build_sets(&x_matrix, &y_matrix, indicator::mb_flag::I, indicator::mb_flag::E);
+  let (ns_x_matrix, ns_y_matrix) = build_sets(&x_matrix, &y_matrix, indicator::mb_flag::N, indicator::mb_flag::S);
+  let (tf_x_matrix, tf_y_matrix) = build_sets(&x_matrix, &y_matrix, indicator::mb_flag::T, indicator::mb_flag::F);
+  let (jp_x_matrix, jp_y_matrix) = build_sets(&x_matrix, &y_matrix, indicator::mb_flag::J, indicator::mb_flag::P);
+  let ensemble = [(ie_x_matrix, ie_y_matrix), (ns_x_matrix, ns_y_matrix), (tf_x_matrix, tf_y_matrix), (jp_x_matrix, jp_y_matrix)];
+  // Train models
+  for i in 0..4 {
+    println!{"Tally of [IE, NS, TF, JP]: {}", ["IE", "NS", "TF", "JP"][i]};
+    if i == 0 {
+      println!{"{} samples for I", ensemble[i].1.iter().filter(|&n| *n == 0u8).count()};
+      println!{"{} samples for E", ensemble[i].1.iter().filter(|&n| *n == 1u8).count()};
+    }
+    if i == 1 {
+      println!{"{} samples for N", ensemble[i].1.iter().filter(|&n| *n == 0u8).count()};
+      println!{"{} samples for S", ensemble[i].1.iter().filter(|&n| *n == 1u8).count()};
+    }
+    if i == 2 {
+      println!{"{} samples for T", ensemble[i].1.iter().filter(|&n| *n == 0u8).count()};
+      println!{"{} samples for F", ensemble[i].1.iter().filter(|&n| *n == 1u8).count()};
+    }
+    if i == 3 {
+      println!{"{} samples for J", ensemble[i].1.iter().filter(|&n| *n == 0u8).count()};
+      println!{"{} samples for P", ensemble[i].1.iter().filter(|&n| *n == 1u8).count()};
+    }
+  }
+  for i in 0..4 {
+    println!{"Training [IE, NS, TF, JP]: {}", ["IE", "NS", "TF", "JP"][i]};
+    train(&ensemble[i].0, &ensemble[i].1, ["IE", "NS", "TF", "JP"][i]);
+  }
 
   Ok(()) 
 }

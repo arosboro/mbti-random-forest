@@ -228,6 +228,9 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "csv",
+ "rand",
+ "regex",
+ "rust-stemmers",
  "serde",
  "smartcore",
  "vtext",
@@ -489,6 +492,16 @@ name = "regex-syntax"
 version = "0.6.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a3f87b73ce11b1619a3c6332f45341e0047173771e8b8b73f87bfeefb7b56244"
+
+[[package]]
+name = "rust-stemmers"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e46a2036019fdb888131db7a4c847a1063a7493f971ed94ea82c67eada63ca54"
+dependencies = [
+ "serde",
+ "serde_derive",
+]
 
 [[package]]
 name = "ryu"
