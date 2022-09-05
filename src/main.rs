@@ -390,15 +390,15 @@ fn main() -> Result<(), Error> {
   let (jp_x_matrix, jp_y_matrix) = build_sets(&x_matrix, &y_matrix, indicator::mb_flag::J, indicator::mb_flag::P);
   let ensemble = [(ie_x_matrix, ie_y_matrix), (ns_x_matrix, ns_y_matrix), (tf_x_matrix, tf_y_matrix), (jp_x_matrix, jp_y_matrix)];
   // Train models
+  let tree: [&str; 4] = ["IE", "NS", "TF", "JP"];
   for i in 0..4 {
-    let tree = ["IE", "NS", "TF", "JP"][i];
-    println!{"Tally of [IE, NS, TF, JP]: {}", tree};
-    println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 0u8).count(), tree.chars().nth(0).unwrap()};
-    println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 1u8).count(), tree.chars().nth(1).unwrap()};
+    println!{"Tally of [IE, NS, TF, JP]: {}", tree[i]};
+    println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 0u8).count(), tree[i].chars().nth(0).unwrap()};
+    println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 1u8).count(), tree[i].chars().nth(1).unwrap()};
   }
   for i in 0..4 {
-    println!{"Training [IE, NS, TF, JP]: {}", ["IE", "NS", "TF", "JP"][i]};
-    train(&ensemble[i].0, &ensemble[i].1, ["IE", "NS", "TF", "JP"][i]);
+    println!{"Training [IE, NS, TF, JP]: {}", tree[i]};
+    train(&ensemble[i].0, &ensemble[i].1, tree[i]);
   }
 
   Ok(()) 
