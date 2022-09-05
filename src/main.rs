@@ -293,25 +293,40 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, member_id: &str) {
   // Split bag into training/test (80%/20%)
   let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, true);
 
-  // RandomForestRegressorParameters {
-  //   /// Tree max depth. See [Decision Tree Regressor](../../tree/decision_tree_regressor/index.html)
-  //   max_depth: Some(16),
-  //   /// The minimum number of samples required to be at a leaf node. See [Decision Tree Regressor](../../tree/decision_tree_regressor/index.html)
-  //   min_samples_leaf: 256,
-  //   /// The minimum number of samples required to split an internal node. See [Decision Tree Regressor](../../tree/decision_tree_regressor/index.html)
-  //   min_samples_split: 128,
-  //   /// The number of trees in the forest.
-  //   n_trees: 4,
-  //   /// Number of random sample of predictors to use as split candidates.
-  //   m: Some(64),
-  //   /// Whether to keep samples used for tree generation. This is required for OOB prediction.
-  //   keep_samples: true,
-  //   /// Seed used for bootstrap sampling and feature selection for each tree.
-  //   seed: 42u64
-  // };
+  // Parameters
+  const DEFAULT_PARAMS: RandomForestRegressorParameters = RandomForestRegressorParameters {
+    max_depth: None,
+    min_samples_leaf: 1,
+    min_samples_split: 2,
+    n_trees: 10,
+    m: Option::None,
+    keep_samples: false,
+    seed: 0,
+  };
+
+  println!("{:?}", DEFAULT_PARAMS);
+
+  const TWEAKED_PARAMS: RandomForestRegressorParameters = RandomForestRegressorParameters {
+    /// Tree max depth. See [Decision Tree Regressor](../../tree/decision_tree_regressor/index.html)
+    max_depth: Some(14),
+    /// The minimum number of samples required to be at a leaf node. See [Decision Tree Regressor](../../tree/decision_tree_regressor/index.html)
+    min_samples_leaf: 256,
+    /// The minimum number of samples required to split an internal node. See [Decision Tree Regressor](../../tree/decision_tree_regressor/index.html)
+    min_samples_split: 128,
+    /// The number of trees in the forest.
+    n_trees: 4,
+    /// Number of random sample of predictors to use as split candidates.
+    m: Some(64),
+    /// Whether to keep samples used for tree generation. This is required for OOB prediction.
+    keep_samples: true,
+    /// Seed used for bootstrap sampling and feature selection for each tree.
+    seed: 42u64,
+  };
+
+  println!("{:?}", TWEAKED_PARAMS);
 
   // Random Forest
-  for (iteration, rf) in RandomForestRegressor::fit(&x_train, &y_train, RandomForestRegressorParameters::default()).iter().enumerate() {
+  for (iteration, rf) in RandomForestRegressor::fit(&x_train, &y_train, TWEAKED_PARAMS).iter().enumerate() {
     println!("Serializing random forest...");
     let bytes_rf = bincode::serialize(&rf).unwrap();
     File::create(format!("mbti_rf__{}.model", member_id))
