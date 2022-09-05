@@ -6,11 +6,12 @@ use serde::{
   Serialize, 
   Deserialize
 };
+use smartcore::tree::decision_tree_classifier::SplitCriterion;
 use std::collections::HashMap;
 // DenseMatrix wrapper around Vec
-use smartcore::linalg::naive::dense_matrix::DenseMatrix;
+use smartcore::linalg::naive::dense_matrix::*;
 // Random Forest
-use smartcore::ensemble::random_forest_regressor::{RandomForestRegressor, RandomForestRegressorParameters};
+use smartcore::ensemble::random_forest_classifier::{RandomForestClassifier, RandomForestClassifierParameters};
 // Model performance
 use smartcore::metrics::{mean_squared_error, accuracy};
 use smartcore::model_selection::train_test_split;
@@ -305,11 +306,12 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, member_id: &str) {
   let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, true);
 
   // Parameters
-  const DEFAULT_PARAMS: RandomForestRegressorParameters = RandomForestRegressorParameters {
+  const DEFAULT_PARAMS: RandomForestClassifierParameters = RandomForestClassifierParameters {
+    criterion: SplitCriterion::Gini,
     max_depth: None,
     min_samples_leaf: 1,
     min_samples_split: 2,
-    n_trees: 10,
+    n_trees: 100,
     m: Option::None,
     keep_samples: false,
     seed: 0,
@@ -317,7 +319,8 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, member_id: &str) {
 
   println!("{:?}", DEFAULT_PARAMS);
 
-  const TWEAKED_PARAMS: RandomForestRegressorParameters = RandomForestRegressorParameters {
+  const TWEAKED_PARAMS: RandomForestClassifierParameters = RandomForestClassifierParameters {
+    criterion: SplitCriterion::Gini,
     /// Tree max depth. See [Decision Tree Regressor](../../tree/decision_tree_regressor/index.html)
     max_depth: Some(14),
     /// The minimum number of samples required to be at a leaf node. See [Decision Tree Regressor](../../tree/decision_tree_regressor/index.html)
@@ -337,7 +340,7 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, member_id: &str) {
   println!("{:?}", TWEAKED_PARAMS);
 
   // Random Forest
-  for (iteration, rf) in RandomForestRegressor::fit(&x_train, &y_train, TWEAKED_PARAMS).iter().enumerate() {
+  for (iteration, rf) in RandomForestClassifier::fit(&x_train, &y_train, DEFAULT_PARAMS).iter().enumerate() {
     println!("Serializing random forest...");
     let bytes_rf = bincode::serialize(&rf).unwrap();
     File::create(format!("mbti_rf__{}.model", member_id))
@@ -351,7 +354,7 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, member_id: &str) {
   
   // Load the Model
   println!("Loading random forest...");
-  let rf: RandomForestRegressor<f64> = {
+  let rf: RandomForestClassifier<f64> = {
     let mut buf: Vec<u8> = Vec::new();
     File::open(format!("mbti_rf__{}.model", member_id))
       .and_then(|mut f| f.read_to_end(&mut buf))
