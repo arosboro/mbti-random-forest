@@ -149,9 +149,9 @@ fn load_data() -> Vec<Sample> {
 }
 
 fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
-  let fx = std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("x_matrix.bincode");
-  let fy = std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("y_matrix.bincode");
-  let err_fx_fy = {
+  let path_fx = Path::new("./x_matrix.bincode");
+  let path_fy = Path::new("./y_matrix.bincode");
+  if !path_fx.exists() || !path_fy.exists() {
     println!("Saving x and y matrices...");
     let mut x_set: Vec<Post> = Vec::new();
     let mut y_set: Vec<MBTI> = Vec::new();
@@ -230,22 +230,16 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
             .and_then(|mut f| f.write_all(&y_matrix_bytes))
             .expect("Can not persist y_matrix");
     (x_matrix, y_matrix)
-  };
-
-  match (fx, fy) {
-    (Ok(mut fx), Ok(mut fy)) => {
-      println!("Loading x and y matrices...");
-      let mut x_buf = Vec::new();
-      let mut y_buf = Vec::new();
-      fx.read_to_end(&mut x_buf).unwrap();
-      fy.read_to_end(&mut y_buf).unwrap();
-      let x_matrix: Vec<Vec<f64>> = bincode::deserialize(&x_buf).unwrap();
-      let y_matrix: Vec<u8> = bincode::deserialize(&y_buf).unwrap();
-      (x_matrix, y_matrix)
-    },
-    (Ok(_), Err(_)) => err_fx_fy,
-    (Err(_), Ok(_)) => err_fx_fy,
-    (Err(_), Err(_)) => err_fx_fy,
+  }
+  else {
+    println!("Loading x and y matrices...");
+    let mut x_buf = Vec::new();
+    let mut y_buf = Vec::new();
+    std::fs::File::open("x_matrix.bincode").expect("Can not open x_matrix").read_to_end(&mut x_buf).unwrap();
+    std::fs::File::open("y_matrix.bincode").expect("Can not open y_matrix").read_to_end(&mut y_buf).unwrap();
+    let x_matrix: Vec<Vec<f64>> = bincode::deserialize(&x_buf).unwrap();
+    let y_matrix: Vec<u8> = bincode::deserialize(&y_buf).unwrap();
+    (x_matrix, y_matrix)
   }
 }
 
