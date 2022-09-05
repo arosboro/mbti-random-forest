@@ -111,35 +111,39 @@ fn tokenize(post: &str) -> Post {
 }
 
 fn load_data() -> Vec<Sample> {
-  let mut samples: Vec<Sample> = Vec::new();
-  if Path::new("samples.bincode").exists() {
-    println!("Loading samples...");
-    let mut buf = Vec::new();
-    std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("samples.bincode").expect("Unable to open file")
-      .read_to_end(&mut buf).expect("Unable to read file");
-    samples = bincode::deserialize(&buf).unwrap();
-  }
-  else {
-    println!("Saving samples...");
-    let mut reader = csv::Reader::from_path("./mbti_1.csv").unwrap();
-    for row in reader.deserialize::<Row>() {
-      match row {
-        Ok(row) => {
-          let mut sample: Sample = Sample {
-            indicator: MBTI::from_string(&row.label),
-            posts: Vec::new(),
-          };
-          for post in row.posts.split("|||") {
-            sample.posts.push(tokenize(post));
-          }
-          samples.push(sample)
-        },
-        Err(e) => println!("Error: {}", e),
+  let samples: Vec<Sample> = {
+    let path: &Path = Path::new("./samples.bincode");
+    if path.exists() {
+      println!("Loading samples...");
+      let mut buf = Vec::new();
+      File::open(path).unwrap()
+        .read_to_end(&mut buf).expect("Unable to read file");
+      let samples: Vec<Sample> = bincode::deserialize(&buf).unwrap();
+      samples
+    } else {
+      println!("Saving samples...");
+      let mut samples: Vec<Sample> = Vec::new();
+      let mut reader = csv::Reader::from_path("./mbti_1.csv").unwrap();
+      for row in reader.deserialize::<Row>() {
+        match row {
+          Ok(row) => {
+            let mut sample: Sample = Sample {
+              indicator: MBTI::from_string(&row.label),
+              posts: Vec::new(),
+            };
+            for post in row.posts.split("|||") {
+              sample.posts.push(tokenize(post));
+            }
+            samples.push(sample)
+          },
+          Err(e) => println!("Error: {}", e),
+        }
       }
+      let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
+      let samples_bytes = bincode::serialize(&samples).unwrap();
+      f.and_then(|mut f| f.write_all(&samples_bytes)).expect("Failed to write samples");
+      samples
     }
-    let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open("samples.bincode");
-    let samples_bytes = bincode::serialize(&samples).unwrap();
-    f.and_then(|mut f| f.write_all(&samples_bytes)).expect("Failed to write samples");
   };
   samples
 }
@@ -170,11 +174,12 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     println!("{} unique labels", unique_labels.len());
   
     let dictionary: Dictionary = {
-      if Path::new("dictionary.bincode").exists() {
+      let path: &Path = Path::new("./dictionary.bincode");
+      if path.exists() {
         println!("Loading dictionary...");
         let mut buf = Vec::new();
-        std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("dictionary.bincode")
-          .and_then(|mut f| f.read_to_end(&mut buf)).expect("Unable to read file");
+        File::open(path).unwrap()
+          .read_to_end(&mut buf).expect("Unable to read file");
         let dictionary: Dictionary = bincode::deserialize(&buf).unwrap();
         dictionary
       }
@@ -189,7 +194,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
             }
           }
         }
-        let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open("dictionary.bincode");
+        let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
         let dictionary_bytes = bincode::serialize(&dictionary).unwrap();
         f.and_then(|mut f| f.write_all(&dictionary_bytes)).expect("Failed to write dictionary");
         dictionary
