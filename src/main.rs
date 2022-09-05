@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io::{Write, Read};
+use std::path::Path;
 use csv::Error;
 use serde::{
   Serialize, 
@@ -110,40 +111,37 @@ fn tokenize(post: &str) -> Post {
 }
 
 fn load_data() -> Vec<Sample> {
-  let f = std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("samples.bincode");
-  match f {
-    Ok(mut f) => {
-      println!("Loading samples...");
-      let mut buf = Vec::new();
-      f.read_to_end(&mut buf).unwrap();
-      let samples: Vec<Sample> = bincode::deserialize(&buf).unwrap();
-      samples
-    },
-    Err(_e) => {
-      println!("Saving samples...");
-      let mut reader = csv::Reader::from_path("./mbti_1.csv").unwrap();
-      let mut samples: Vec<Sample> = Vec::new();
-      for row in reader.deserialize::<Row>() {
-        match row {
-          Ok(row) => {
-            let mut sample: Sample = Sample {
-              indicator: MBTI::from_string(&row.label),
-              posts: Vec::new(),
-            };
-            for post in row.posts.split("|||") {
-              sample.posts.push(tokenize(post));
-            }
-            samples.push(sample)
-          },
-          Err(e) => println!("Error: {}", e),
-        }
-      }
-      let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open("samples.bincode");
-      let samples_bytes = bincode::serialize(&samples).unwrap();
-      f.and_then(|mut f| f.write_all(&samples_bytes)).expect("Failed to write samples");
-      samples
-    },
+  let mut samples: Vec<Sample> = Vec::new();
+  if Path::new("samples.bincode").exists() {
+    println!("Loading samples...");
+    let mut buf = Vec::new();
+    std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("samples.bincode").expect("Unable to open file")
+      .read_to_end(&mut buf).expect("Unable to read file");
+    samples = bincode::deserialize(&buf).unwrap();
   }
+  else {
+    println!("Saving samples...");
+    let mut reader = csv::Reader::from_path("./mbti_1.csv").unwrap();
+    for row in reader.deserialize::<Row>() {
+      match row {
+        Ok(row) => {
+          let mut sample: Sample = Sample {
+            indicator: MBTI::from_string(&row.label),
+            posts: Vec::new(),
+          };
+          for post in row.posts.split("|||") {
+            sample.posts.push(tokenize(post));
+          }
+          samples.push(sample)
+        },
+        Err(e) => println!("Error: {}", e),
+      }
+    }
+    let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open("samples.bincode");
+    let samples_bytes = bincode::serialize(&samples).unwrap();
+    f.and_then(|mut f| f.write_all(&samples_bytes)).expect("Failed to write samples");
+  };
+  samples
 }
 
 fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
@@ -171,32 +169,30 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     }
     println!("{} unique labels", unique_labels.len());
   
-    let f = std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("dictionary.bincode");
     let dictionary: Dictionary = {
-      match f {
-        Ok(mut f) => {
-          println!("Loading dictionary...");
-          let mut buf = Vec::new();
-          f.read_to_end(&mut buf).unwrap();
-          let dictionary: Dictionary = bincode::deserialize(&buf).unwrap();
-          dictionary
-        },
-        Err(_e) => {
-          println!("Saving dictionary...");
-          // Create a dictionary indexing unique tokens.
-          let mut dictionary: Dictionary = HashMap::new();
-          for post in x_set.clone() {
-            for token in post {
-              if !dictionary.contains_key(&token) {
-                dictionary.insert(token, dictionary.len() as f64);
-              }
+      if Path::new("dictionary.bincode").exists() {
+        println!("Loading dictionary...");
+        let mut buf = Vec::new();
+        std::fs::OpenOptions::new().write(false).create(false).truncate(false).open("dictionary.bincode")
+          .and_then(|mut f| f.read_to_end(&mut buf)).expect("Unable to read file");
+        let dictionary: Dictionary = bincode::deserialize(&buf).unwrap();
+        dictionary
+      }
+      else {
+        println!("Saving dictionary...");
+        // Create a dictionary indexing unique tokens.
+        let mut dictionary: Dictionary = HashMap::new();
+        for post in x_set.clone() {
+          for token in post {
+            if !dictionary.contains_key(&token) {
+              dictionary.insert(token, dictionary.len() as f64);
             }
           }
-          let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open("dictionary.bincode");
-          let dictionary_bytes = bincode::serialize(&dictionary).unwrap();
-          f.and_then(|mut f| f.write_all(&dictionary_bytes)).expect("Failed to write dictionary");
-          dictionary
-        },
+        }
+        let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open("dictionary.bincode");
+        let dictionary_bytes = bincode::serialize(&dictionary).unwrap();
+        f.and_then(|mut f| f.write_all(&dictionary_bytes)).expect("Failed to write dictionary");
+        dictionary
       }
     };
   
