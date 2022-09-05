@@ -273,18 +273,28 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>) {
   let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, true);
 
   // Random Forest
-  let y_hat_rf = RandomForestRegressor::fit(&x_train, &y_train, {
+  RandomForestRegressor::fit(&x_train, &y_train, {
     let mut params = RandomForestRegressorParameters::default();
     params.n_trees = 256;
     params
-  }).and_then(|rf| {
-    println!("Serializing random forest...");
-    let bytes_rf = bincode::serialize(&rf).unwrap();
-    File::create("mbti_rf.model")
-      .and_then(|mut f| f.write_all(&bytes_rf))
-      .expect("Can not persist random_forest");
-    rf.predict(&x_test)
-  }).unwrap();
+  }).iter()
+    .for_each(|rf| {
+      let bytes_rf = bincode::serialize(&rf).unwrap();
+      File::create("mbti_rf.model")
+        .and_then(|mut f| f.write_all(&bytes_rf))
+        .expect("Can not persist random_forest");
+      let y_pred: Vec<f64> = rf.predict(&x_test).unwrap();
+      println!("Random Forest accuracy: {}", accuracy(&y_test, &y_pred));
+      println!("MSE: {}", mean_squared_error(&y_test, &y_pred));
+    });
+  // }).and_then(|rf| {
+  //   println!("Serializing random forest...");
+  //   let bytes_rf = bincode::serialize(&rf).unwrap();
+  //   File::create("mbti_rf.model")
+  //     .and_then(|mut f| f.write_all(&bytes_rf))
+  //     .expect("Can not persist random_forest");
+  //   rf.predict(&x_test)
+  // }).unwrap();
   
   // Load the Model
   println!("Loading random forest...");
@@ -299,7 +309,6 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>) {
 
   println!("Validation of serialized model...");
   let y_pred = rf.predict(&x_test).unwrap();
-  assert!(y_pred == y_hat_rf, "Model is inconsistent.");
 
   // Calculate the accuracy
   println!("Metrics about model.");
