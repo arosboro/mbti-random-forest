@@ -15,8 +15,8 @@ use smartcore::ensemble::random_forest_regressor::{RandomForestRegressor, Random
 use smartcore::metrics::{mean_squared_error, accuracy};
 use smartcore::model_selection::train_test_split;
 use vtext::tokenize::*;
-use regex::Regex;
 use rust_stemmers::{Algorithm, Stemmer};
+use regex::Regex;
 
 #[derive(Debug, Deserialize)]
 struct Row {
@@ -106,12 +106,13 @@ struct Sample {
   posts: Vec<Vec<String>>,
 }
 
-fn cleanup(post: &str) -> String {
-  // removing links from text data
-  let url_re = Regex::new(r"(https?:\\/\\/)?([\\da-z\\.-]+)\\.([a-z\\.]{2,6})([\\/\w\\.-]*)").unwrap();
-  let clean = url_re.replace_all(post, " ").to_string();
-  let stopword_re = Regex::new(r"[^a-zA-Z0-9]").unwrap();
-  return stopword_re.replace_all(&clean, " ").to_string()
+fn cleanup(post: &str, expressions: &[Regex; 3]) -> String {
+  let mut acc: String = post.to_owned();
+  for expression in expressions.iter() {
+    let rep = if expression.as_str() == r"\s+" { " " } else { "" };
+    acc = expression.replace_all(&acc, rep).to_string();
+  }
+  acc.to_owned()
 }
 
 fn lemmatize(tokens: Post) -> Vec<String> {
@@ -124,11 +125,13 @@ fn lemmatize(tokens: Post) -> Vec<String> {
   lemmas
 }
 
-fn tokenize(post: &str) -> Vec<String> {
+fn tokenize(post: &str, expressions: &[Regex; 3]) -> Vec<String> {
+  let clean = cleanup(post.to_lowercase().as_str(), expressions);
   let tokenizer = VTextTokenizerParams::default().lang("en").build().unwrap();
-  let mut tokens: Vec<String> = tokenizer.tokenize(post).map(|s| cleanup(&s.to_lowercase()).to_owned()).collect();
-  tokens = tokens.iter().filter(|s| s.trim().len() > 0).map(|s| s.trim().to_owned()).collect();
-  lemmatize(tokens)
+  let mut tokens: Vec<&str> = tokenizer.tokenize(&clean).collect();
+  tokens.retain(|x| x.trim().len() > 0);
+  let clean_tokens = tokens.iter().map(|x| x.trim().to_string()).collect();
+  lemmatize(clean_tokens)
 }
 
 fn load_data() -> Vec<Sample> {
@@ -145,6 +148,11 @@ fn load_data() -> Vec<Sample> {
       println!("Saving samples...");
       let mut samples: Vec<Sample> = Vec::new();
       let mut reader = csv::Reader::from_path("./mbti_1.csv").unwrap();
+      let expressions = [
+        Regex::new(r"https?://[a-zA-Z0-9_%./]+\??(([a-z0-9%]+=[a-z0-9%]+&?)+)?").unwrap(),
+        Regex::new(r"[^a-zA-Z0-9 ]").unwrap(),
+        Regex::new(r"\s+").unwrap(),
+      ];
       for row in reader.deserialize::<Row>() {
         match row {
           Ok(row) => {
@@ -153,7 +161,7 @@ fn load_data() -> Vec<Sample> {
               posts: Vec::new(),
             };
             for post in row.posts.split("|||") {
-              let tokens = tokenize(post);
+              let tokens = tokenize(post, &expressions);
               if tokens.len() > 0 {
                 sample.posts.push(tokens);
               }
