@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::fs::File;
 use std::io::{Write, Read};
 use std::path::Path;
@@ -109,7 +108,7 @@ struct Sample {
 
 fn cleanup(post: &str) -> String {
   // removing links from text data
-  let url_re = Regex::new(r"(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w\.-]*)").unwrap();
+  let url_re = Regex::new(r"(https?:\\/\\/)?([\\da-z\\.-]+)\\.([a-z\\.]{2,6})([\\/\w\\.-]*)").unwrap();
   let clean = url_re.replace_all(post, " ").to_string();
   let stopword_re = Regex::new(r"[^a-zA-Z0-9]").unwrap();
   return stopword_re.replace_all(&clean, " ").to_string()
