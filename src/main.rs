@@ -153,7 +153,10 @@ fn load_data() -> Vec<Sample> {
               posts: Vec::new(),
             };
             for post in row.posts.split("|||") {
-              sample.posts.push(tokenize(post));
+              let tokens = tokenize(post);
+              if tokens.len() > 0 {
+                sample.posts.push(tokens);
+              }
             }
             samples.push(sample)
           },
