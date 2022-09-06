@@ -269,19 +269,56 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
       (x_set.len() as f64 / count).ln()
     };
 
-    let mut tf_matrix = Vec::new();
-    for post in x_set.clone() {
-      let mut tf_row = Vec::new();
-      for token in dictionary.keys() {
-        tf_row.push(tf(&post, token));
+    let tf_matrix = {
+      let path: &Path = Path::new("./tf_matrix.bincode");
+      if path.exists() {
+        println!("Loading tf_matrix...");
+        let mut buf = Vec::new();
+        File::open(path).unwrap()
+          .read_to_end(&mut buf).expect("Unable to read file");
+        let tf_matrix: Vec<Vec<f64>> = bincode::deserialize(&buf).unwrap();
+        tf_matrix
       }
-      tf_matrix.push(tf_row);
-    }
-    let mut idf_map: HashMap<String, f64> = HashMap::new();
-    for token in dictionary.keys() { 
-      idf_map.insert(token.to_string(), idf(token)); 
-    }
-    
+      else {
+        println!("Saving tf_matrix...");
+        let mut tf_matrix: Vec<Vec<f64>> = Vec::new();
+        for post in x_set.clone() {
+          let mut tf_row: Vec<f64> = Vec::new();
+          for token in dictionary.keys() {
+            tf_row.push(tf(&post, token));
+          }
+          tf_matrix.push(tf_row);
+        }
+        let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
+        let tf_matrix_bytes = bincode::serialize(&tf_matrix).unwrap();
+        f.and_then(|mut f| f.write_all(&tf_matrix_bytes)).expect("Failed to write tf_matrix");
+        tf_matrix
+      }
+    };
+
+    let idf_map: HashMap<String, f64> = {
+      let path: &Path = Path::new("./idf_map.bincode");
+      if path.exists() {
+        println!("Loading idf_map...");
+        let mut buf = Vec::new();
+        File::open(path).unwrap()
+          .read_to_end(&mut buf).expect("Unable to read file");
+        let idf_map: HashMap<String, f64> = bincode::deserialize(&buf).unwrap();
+        idf_map
+      }
+      else {
+        println!("Saving idf_map...");
+        let mut idf_map: HashMap<String, f64> = HashMap::new();
+        for token in dictionary.keys() {
+          idf_map.insert(token.to_string(), idf(token));
+        }
+        let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
+        let idf_map_bytes = bincode::serialize(&idf_map).unwrap();
+        f.and_then(|mut f| f.write_all(&idf_map_bytes)).expect("Failed to write idf_map");
+        idf_map
+      }
+    };
+
     let mut x_matrix: Vec<Vec<f64>> = Vec::new();
     for (i, post) in x_set.iter().enumerate() {
       let mut row = Vec::new();
