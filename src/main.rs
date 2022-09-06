@@ -311,7 +311,8 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         println!("Saving idf_map...");
         let mut idf_map: HashMap<String, f64> = HashMap::new();
         for token in dictionary.keys() {
-          idf_map.insert(token.to_string(), idf(token));
+          let idf_val: f64 = idf(&token);
+          idf_map.insert(token.to_string(), idf_val);
         }
         let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
         let idf_map_bytes = bincode::serialize(&idf_map).unwrap();
