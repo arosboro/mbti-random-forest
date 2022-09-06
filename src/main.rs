@@ -268,17 +268,29 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
       }
       (x_set.len() as f64 / count).ln()
     };
+
+    let mut tf_matrix = Vec::new();
+    for post in x_set.clone() {
+      let mut tf_row = Vec::new();
+      for token in dictionary.keys() {
+        tf_row.push(tf(&post, token));
+      }
+      tf_matrix.push(tf_row);
+    }
+    let mut idf_map: HashMap<String, f64> = HashMap::new();
+    for token in dictionary.keys() { 
+      idf_map.insert(token.to_string(), idf(token)); 
+    }
     
     let mut x_matrix: Vec<Vec<f64>> = Vec::new();
-    for post in x_set.clone() {
-      let mut row: Vec<f64> = Vec::new();
-      for token in post.clone() {
-        let freq = tf(&post, &token);
-        let inverse_freq = idf(&token);
-        row.push(freq * inverse_freq);
+    for (i, post) in x_set.iter().enumerate() {
+      let mut row = Vec::new();
+      for (j, t) in post.iter().enumerate() {
+        row.push(tf_matrix[i][j] * idf_map[t]);
       }
       x_matrix.push(row);
     }
+  
     println!("We obtain a {}x{} matrix of counts for the vocabulary entries", x_matrix.len(), x_matrix[0].len());
 
     // Create f64 matrices from x_set.
