@@ -18,6 +18,8 @@ use smartcore::model_selection::train_test_split;
 use vtext::tokenize::*;
 use rust_stemmers::{Algorithm, Stemmer};
 use regex::Regex;
+use std::collections::HashSet;
+use stopwords::{Spark, Language, Stopwords};
 
 #[derive(Debug, Deserialize)]
 struct Row {
@@ -128,9 +130,11 @@ fn lemmatize(tokens: Post) -> Vec<String> {
 
 fn tokenize(post: &str, expressions: &[Regex; 3]) -> Vec<String> {
   let clean = cleanup(post.to_lowercase().as_str(), expressions);
+  let stopswords: HashSet<_> = Spark::stopwords(Language::English).unwrap().iter().collect();
   let tokenizer = VTextTokenizerParams::default().lang("en").build().unwrap();
   let mut tokens: Vec<&str> = tokenizer.tokenize(&clean).collect();
   tokens.retain(|x| x.trim().len() > 0);
+  tokens.retain(|token| !stopswords.contains(token));
   let clean_tokens = tokens.iter().map(|x| x.trim().to_string()).collect();
   lemmatize(clean_tokens)
 }
@@ -325,15 +329,15 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, member_id: &str) {
     /// Tree max depth. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
     max_depth: Some(14),
     /// The minimum number of samples required to be at a leaf node. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
-    min_samples_leaf: 256,
+    min_samples_leaf: 1,
     /// The minimum number of samples required to split an internal node. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
-    min_samples_split: 128,
+    min_samples_split: 2,
     /// The number of trees in the forest.
-    n_trees: 4,
+    n_trees: 100,
     /// Number of random sample of predictors to use as split candidates.
-    m: Some(64),
+    m: None,
     /// Whether to keep samples used for tree generation. This is required for OOB prediction.
-    keep_samples: true,
+    keep_samples: false,
     /// Seed used for bootstrap sampling and feature selection for each tree.
     seed: 42u64,
   };
