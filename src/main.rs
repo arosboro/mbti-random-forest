@@ -243,6 +243,10 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     println!("Dictionary size: {}", dictionary.len());
 
     // Create TF*IDF x_matrix from x_set
+    // tf is the number of times a token appears in a post
+    // idf is the inverse document frequency of a token e.g. how many posts contain the token
+    // tf-idf = tf * log(N / df)
+    // Where N is number of documents and df is number of documents containing the term.
     let tf = |post: &Post, token: &str| -> f64 {
       let mut count = 0.;
       for t in post {
@@ -252,15 +256,17 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
       }
       count
     };
-    let idf = |post: &Post, token: &str| -> f64 {
+    let idf = |token: &str| -> f64 {
       let mut count = 0.;
-      for t in post {
-        if t == token {
-          count += 1.;
-          break;
+      for post in x_set.clone() {
+        for t in post {
+          if t == token {
+            count += 1.;
+            break;
+          }
         }
       }
-      ((x_set.len() * x_set[0].len()) as f64 / count).ln()
+      (x_set.len() as f64 / count).ln()
     };
     
     let mut x_matrix: Vec<Vec<f64>> = Vec::new();
@@ -268,7 +274,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
       let mut row: Vec<f64> = Vec::new();
       for token in post.clone() {
         let freq = tf(&post, &token);
-        let inverse_freq = idf(&post, &token);
+        let inverse_freq = idf(&token);
         row.push(freq * inverse_freq);
       }
       x_matrix.push(row);
