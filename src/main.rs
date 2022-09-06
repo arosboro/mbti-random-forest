@@ -284,8 +284,9 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         let mut tf_matrix: Vec<Vec<f64>> = Vec::new();
         for post in x_set.clone() {
           let mut tf_row: Vec<f64> = Vec::new();
-          for token in dictionary.keys() {
-            tf_row.push(tf(&post, token));
+          for token in post.clone() {
+            let freq: f64 = tf(&post, &token);
+            tf_row.push(freq);
           }
           tf_matrix.push(tf_row);
         }
@@ -323,7 +324,8 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     for (i, post) in x_set.iter().enumerate() {
       let mut row = Vec::new();
       for (j, t) in post.iter().enumerate() {
-        row.push(tf_matrix[i][j] * idf_map[t]);
+        let tf_idf: f64 = tf_matrix[i][j] * idf_map[t];
+        row.push(tf_idf);
       }
       x_matrix.push(row);
     }
