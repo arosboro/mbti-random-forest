@@ -23,7 +23,7 @@ use stopwords::{Spark, Language, Stopwords};
 
 #[derive(Debug, Deserialize)]
 struct Row {
-  label: String,
+  r#type: String,
   posts: String,
 }
 
@@ -162,7 +162,7 @@ fn load_data() -> Vec<Sample> {
         match row {
           Ok(row) => {
             let mut sample: Sample = Sample {
-              indicator: MBTI::from_string(&row.label),
+              indicator: MBTI::from_string(&row.r#type),
               posts: Vec::new(),
             };
             for post in row.posts.split("|||") {
