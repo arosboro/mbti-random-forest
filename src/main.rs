@@ -340,7 +340,7 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, member_id: &str) {
   println!("{:?}", TWEAKED_PARAMS);
 
   // Random Forest
-  for (iteration, rf) in RandomForestClassifier::fit(&x_train, &y_train, DEFAULT_PARAMS).iter().enumerate() {
+  for (iteration, rf) in RandomForestClassifier::fit(&x_train, &y_train, TWEAKED_PARAMS).iter().enumerate() {
     println!("Serializing random forest...");
     let bytes_rf = bincode::serialize(&rf).unwrap();
     File::create(format!("mbti_rf__{}.model", member_id))
