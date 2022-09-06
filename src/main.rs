@@ -152,7 +152,7 @@ fn load_data() -> Vec<Sample> {
     } else {
       println!("Saving samples...");
       let mut samples: Vec<Sample> = Vec::new();
-      let mut reader = csv::Reader::from_path("./mbti_1.csv").unwrap();
+      let mut reader = csv::Reader::from_path("./MBTI 500.csv").unwrap();
       let expressions = [
         Regex::new(r"https?://[a-zA-Z0-9_%./]+\??(([a-z0-9%]+=[a-z0-9%]+&?)+)?").unwrap(),
         Regex::new(r"[^a-zA-Z0-9 ]").unwrap(),
