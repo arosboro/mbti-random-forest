@@ -7,7 +7,7 @@ use serde::{
   Deserialize
 };
 use smartcore::tree::decision_tree_classifier::SplitCriterion;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 // DenseMatrix wrapper around Vec
 use smartcore::linalg::naive::dense_matrix::*;
 // Random Forest
@@ -18,8 +18,8 @@ use smartcore::model_selection::train_test_split;
 use vtext::tokenize::*;
 use rust_stemmers::{Algorithm, Stemmer};
 use regex::Regex;
-use std::collections::HashSet;
 use stopwords::{Spark, Language, Stopwords};
+
 
 #[derive(Debug, Deserialize)]
 struct Row {
@@ -100,6 +100,8 @@ impl MBTI {
   }
 }
 
+
+
 type Post = Vec<String>;
 type Dictionary = HashMap<String, f64>;
 
@@ -130,11 +132,11 @@ fn lemmatize(tokens: Post) -> Vec<String> {
 
 fn tokenize(post: &str, expressions: &[Regex; 3]) -> Vec<String> {
   let clean = cleanup(post.to_lowercase().as_str(), expressions);
-  let stopswords: HashSet<_> = Spark::stopwords(Language::English).unwrap().iter().collect();
+  let stopwords: HashSet<_> = Spark::stopwords(Language::English).unwrap().iter().collect();
   let tokenizer = VTextTokenizerParams::default().lang("en").build().unwrap();
   let mut tokens: Vec<&str> = tokenizer.tokenize(&clean).collect();
   tokens.retain(|x| x.trim().len() > 0);
-  tokens.retain(|token| !stopswords.contains(token));
+  tokens.retain(|token| !stopwords.contains(token));
   let clean_tokens = tokens.iter().map(|x| x.trim().to_string()).collect();
   lemmatize(clean_tokens)
 }
@@ -190,7 +192,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
   let path_fy = Path::new("./y_matrix.bincode");
   if !path_fx.exists() || !path_fy.exists() {
     println!("Saving x and y matrices...");
-    let mut x_set: Vec<Vec<String>> = Vec::new();
+    let mut x_set: Vec<Post> = Vec::new();
     let mut y_set: Vec<MBTI> = Vec::new();
   
     for sample in training_set {
@@ -237,19 +239,52 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         dictionary
       }
     };
-  
+
     println!("Dictionary size: {}", dictionary.len());
-  
-    // Create f64 matrices for x_set.
-    let mut x_matrix: Vec<Vec<f64>> = Vec::new();
-    for post in x_set {
-      let mut matrix: Vec<f64> = Vec::new();
-      for token in post {
-        let index: f64 = dictionary.get_key_value(&token.to_string()).unwrap().1.clone();
-        matrix.push(index);
+
+    // Create TF*IDF x_matrix from x_set
+    let tf = |post: &Post, token: &str| -> f64 {
+      let mut count = 0.;
+      for t in post {
+        if t == token {
+          count += 1.;
+        }
       }
-      x_matrix.push(matrix);
+      count
+    };
+    let idf = |post: &Post, token: &str| -> f64 {
+      let mut count = 0.;
+      for t in post {
+        if t == token {
+          count += 1.;
+          break;
+        }
+      }
+      ((x_set.len() * x_set[0].len()) as f64 / count).ln()
+    };
+    
+    let mut x_matrix: Vec<Vec<f64>> = Vec::new();
+    for post in x_set.clone() {
+      let mut row: Vec<f64> = Vec::new();
+      for token in post.clone() {
+        let freq = tf(&post, &token);
+        let inverse_freq = idf(&post, &token);
+        row.push(freq * inverse_freq);
+      }
+      x_matrix.push(row);
     }
+    println!("We obtain a {}x{} matrix of counts for the vocabulary entries", x_matrix.len(), x_matrix[0].len());
+
+    // Create f64 matrices from x_set.
+    // let mut x_matrix: Vec<Vec<f64>> = Vec::new();
+    // for post in x_set {
+    //   let mut matrix: Vec<f64> = Vec::new();
+    //   for token in post {
+    //     let index: f64 = dictionary.get_key_value(&token.to_string()).unwrap().1.clone();
+    //     matrix.push(index);
+    //   }
+    //   x_matrix.push(matrix);
+    // }
   
     // Create f64 matrices for y_set.
     let mut y_matrix: Vec<u8> = Vec::new();
@@ -267,7 +302,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
             .and_then(|mut f| f.write_all(&y_matrix_bytes))
             .expect("Can not persist y_matrix");
     (x_matrix, y_matrix)
-  }
+  } 
   else {
     println!("Loading x and y matrices...");
     let mut x_buf = Vec::new();
