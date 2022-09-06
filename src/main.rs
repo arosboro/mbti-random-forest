@@ -320,12 +320,13 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, member_id: &str) {
   println!("{:?}", DEFAULT_PARAMS);
 
   const TWEAKED_PARAMS: RandomForestClassifierParameters = RandomForestClassifierParameters {
+    /// Split criteria to use when building a tree. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
     criterion: SplitCriterion::Gini,
-    /// Tree max depth. See [Decision Tree Regressor](../../tree/decision_tree_regressor/index.html)
+    /// Tree max depth. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
     max_depth: Some(14),
-    /// The minimum number of samples required to be at a leaf node. See [Decision Tree Regressor](../../tree/decision_tree_regressor/index.html)
+    /// The minimum number of samples required to be at a leaf node. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
     min_samples_leaf: 256,
-    /// The minimum number of samples required to split an internal node. See [Decision Tree Regressor](../../tree/decision_tree_regressor/index.html)
+    /// The minimum number of samples required to split an internal node. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
     min_samples_split: 128,
     /// The number of trees in the forest.
     n_trees: 4,
@@ -411,10 +412,81 @@ fn main() -> Result<(), Error> {
     println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 0u8).count(), tree[i].chars().nth(0).unwrap()};
     println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 1u8).count(), tree[i].chars().nth(1).unwrap()};
   }
-  for i in 0..4 {
-    println!{"Training [IE, NS, TF, JP]: {}", tree[i]};
-    train(&ensemble[i].0, &ensemble[i].1, tree[i]);
+
+  if !Path::new("./mbti_rf__ALL.model").exists() {
+    println!("Generating generic model");
+    train(&x_matrix, &y_matrix, "ALL");
+  } else {
+    println!("Generic model already exists");
+    // TODO load model and test
   }
+
+  let mut models: Vec<RandomForestClassifier<f64>> = Vec::new();
+  for i in 0..4 {
+    let filename = format!("./mbti_rf__{}.model", tree[i]);
+    println!{"Training [IE, NS, TF, JP]: {}", tree[i]};
+    let path_model = Path::new(&filename);
+    if !path_model.exists() {
+      train(&ensemble[i].0, &ensemble[i].1, tree[i]);
+    }
+    else {
+      println!("Loading random forest {} model...", tree[i]);
+      let rf: RandomForestClassifier<f64> = {
+        let mut buf: Vec<u8> = Vec::new();
+        File::open(path_model)
+          .and_then(|mut f| f.read_to_end(&mut buf))
+          .expect("Can not load model");
+        bincode::deserialize(&buf).expect("Can not deserialize the model")
+      };
+      models.push(rf);
+    }
+  }
+
+  let x: DenseMatrix<f64> = DenseMatrix::from_2d_vec(&x_matrix);
+  // These are our target class labels
+  let y: Vec<f64> = y_matrix.into_iter().map(|x| x as f64).collect();
+  // Split bag into training/test (80%/20%)
+  let (_x_train, x_test, _y_train, y_test) = train_test_split(&x, &y, 0.2, true);
+  let mut ensemble_pred: [Vec<f64>; 4] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+  for (i, model) in models.iter().enumerate() {
+    ensemble_pred[i] = model.predict(&x_test).unwrap();
+  }
+  let mut y_pred: Vec<f64> = Vec::new();
+  for i in 0..y_test.len(){
+    let mut mbti: u8 = 0u8;
+    for j in 0..4 {
+      if ensemble_pred[j][i] == 0f64 && tree[j].chars().nth(0).unwrap() == 'I' {
+        mbti ^= indicator::mb_flag::I;
+      }
+      else if ensemble_pred[j][i] == 1f64 && tree[j].chars().nth(1).unwrap() == 'E' {
+        mbti ^= indicator::mb_flag::E;
+      }
+      else if ensemble_pred[j][i] == 0f64 && tree[j].chars().nth(0).unwrap() == 'N' {
+        mbti ^= indicator::mb_flag::N;
+      }
+      else if ensemble_pred[j][i] == 1f64 && tree[j].chars().nth(1).unwrap() == 'S' {
+        mbti ^= indicator::mb_flag::S;
+      }
+      else if ensemble_pred[j][i] == 0f64 && tree[j].chars().nth(0).unwrap() == 'T' {
+        mbti ^= indicator::mb_flag::T;
+      }
+      else if ensemble_pred[j][i] == 1f64 && tree[j].chars().nth(1).unwrap() == 'F' {
+        mbti ^= indicator::mb_flag::F;
+      }
+      else if ensemble_pred[j][i] == 0f64 && tree[j].chars().nth(0).unwrap() == 'J' {
+        mbti ^= indicator::mb_flag::J;
+      }
+      else if ensemble_pred[j][i] == 1f64 && tree[j].chars().nth(1).unwrap() == 'P' {
+        mbti ^= indicator::mb_flag::P;
+      }
+    }
+    y_pred.push(mbti as f64);
+  }
+  // Calculate the accuracy
+  println!("Metrics about model.");
+  println!("Accuracy: {}", accuracy(&y_test, &y_pred));
+  // Calculate test error
+  println!("MSE: {}", mean_squared_error(&y_test, &y_pred));
 
   Ok(()) 
 }
