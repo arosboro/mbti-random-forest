@@ -327,17 +327,17 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, member_id: &str) {
     /// Split criteria to use when building a tree. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
     criterion: SplitCriterion::Gini,
     /// Tree max depth. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
-    max_depth: Some(14),
+    max_depth: Some(8),
     /// The minimum number of samples required to be at a leaf node. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
-    min_samples_leaf: 1,
+    min_samples_leaf: 128,
     /// The minimum number of samples required to split an internal node. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
-    min_samples_split: 2,
+    min_samples_split: 256,
     /// The number of trees in the forest.
-    n_trees: 100,
+    n_trees: 16,
     /// Number of random sample of predictors to use as split candidates.
-    m: None,
+    m: Some(64),
     /// Whether to keep samples used for tree generation. This is required for OOB prediction.
-    keep_samples: false,
+    keep_samples: true,
     /// Seed used for bootstrap sampling and feature selection for each tree.
     seed: 42u64,
   };
