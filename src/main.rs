@@ -248,24 +248,10 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     // tf-idf = tf * log(N / df)
     // Where N is number of documents and df is number of documents containing the term.
     let tf = |post: &Post, token: &str| -> f64 {
-      let mut count = 0.;
-      for t in post {
-        if t == token {
-          count += 1.;
-        }
-      }
-      count
+      post.iter().filter(|t| *t == token).count() as f64
     };
-    let idf = |token: &str| -> f64 {
-      let mut count = 0.;
-      for post in x_set.clone() {
-        for t in post {
-          if t == token {
-            count += 1.;
-            break;
-          }
-        }
-      }
+    let idf = |x_set: &Vec<Post>, token: &str| -> f64 {
+      let count = x_set.iter().filter(|post| post.contains(&token.to_string())).count() as f64;
       (x_set.len() as f64 / count).ln()
     };
 
@@ -311,7 +297,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         println!("Saving idf_map...");
         let mut idf_map: HashMap<String, f64> = HashMap::new();
         for token in dictionary.keys() {
-          let idf_val: f64 = idf(&token);
+          let idf_val: f64 = idf(&x_set, &token);
           idf_map.insert(token.to_string(), idf_val);
         }
         let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
