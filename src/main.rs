@@ -20,6 +20,7 @@ use vtext::tokenize::*;
 use rust_stemmers::{Algorithm, Stemmer};
 use regex::Regex;
 use stopwords::{Spark, Language, Stopwords};
+use nalgebra::DMatrix;
 
 
 #[derive(Debug, Deserialize)]
@@ -161,6 +162,20 @@ fn load_data() -> Vec<Sample> {
         Regex::new(r"[^a-zA-Z0-9 ]").unwrap(),
         Regex::new(r"\s+").unwrap(),
       ];
+      let mut count_row = 0;
+      for row in reader.deserialize::<Row>() {
+        match row {
+          Ok(row) => {
+            for post in row.posts.split("|||") {
+              let count = tokenize(post, &expressions).len();
+              if count > count_row {
+                count_row = count;
+              }
+            }
+          }
+          Err(e) => println!("Error: {}", e),
+        }
+      }
       for row in reader.deserialize::<Row>() {
         match row {
           Ok(row) => {
@@ -168,10 +183,15 @@ fn load_data() -> Vec<Sample> {
               indicator: MBTI::from_string(&row.r#type),
               posts: Vec::new(),
             };
+
             for post in row.posts.split("|||") {
               let tokens = tokenize(post, &expressions);
+              let mut post_vec = vec!["".to_string(); count_row];
               if tokens.len() > 0 {
-                sample.posts.push(tokens);
+                tokens.iter().enumerate().for_each(|(i, _)| {
+                  post_vec[i] = tokens[i].to_owned();
+                });
+                sample.posts.push(post_vec);
               }
             }
             samples.push(sample)
@@ -188,27 +208,24 @@ fn load_data() -> Vec<Sample> {
   samples
 }
 
-fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
+fn normalize(training_set: &Vec<Sample>, count_row: usize) -> (Vec<Vec<f64>>, Vec<u8>) {
   let path_fx = Path::new("./x_matrix.bincode");
   let path_fy = Path::new("./y_matrix.bincode");
   if !path_fx.exists() || !path_fy.exists() {
     println!("Saving x and y matrices...");
-    let mut x_set: Vec<Post> = Vec::new();
-    let mut y_set: Vec<MBTI> = Vec::new();
-  
-    for sample in training_set {
-      for post in &sample.posts {
-        x_set.push(post.to_owned());
-        y_set.push(sample.indicator);
-      }
-    }
+    let x_set: Vec<Vec<String>> = training_set.iter().flat_map(|x| x.posts.iter()).cloned().collect();
+    let y_set: Vec<u8> = training_set.iter().map(|x| x.indicator.indicator).collect();
     println!("{} samples", x_set.len());
-  
+
+    let x_set_matrix: DMatrix<Post> = DMatrix::from_vec(x_set.len(), 500, x_set);
+    let y_set_matrix: DMatrix<u8> = DMatrix::from_vec(y_set.len(), 1, y_set);
+   
     // Deterimine unique labels
     let mut unique_labels: Vec<String> = Vec::new();
-    for label in y_set.iter() {
+    for label in y_set_matrix.iter() {
+      let mbti = MBTI{ indicator: *label };
       if !unique_labels.contains(&label.to_string()) {
-        unique_labels.push(label.to_string());
+        unique_labels.push(mbti.to_string());
       }
     }
     println!("{} unique labels", unique_labels.len());
@@ -227,7 +244,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         println!("Saving dictionary...");
         // Create a dictionary indexing unique tokens.
         let mut dictionary: Dictionary = HashMap::new();
-        for post in x_set.clone() {
+        for post in &x_set_matrix {
           for token in post {
             if !dictionary.contains_key(&token.to_string()) {
               dictionary.insert(token.to_string(), dictionary.len() as f64);
@@ -251,84 +268,147 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     let tf = |post: &Post, token: &str| -> f64 {
       post.iter().filter(|t| *t == token).count() as f64
     };
-    let idf = |x_set: &Vec<Post>, token: &str| -> f64 {
+    // it takes way too long... e.g. 5.3 seconds per call
+    let idf = |x_set: DMatrix<Post>, token: &str| -> f64 {
       (x_set.len() as f64 / x_set.iter().filter(|post| post.contains(&token.to_string())).count() as f64).ln()
     };
 
-    let tf_matrix = {
-      let path: &Path = Path::new("./tf_matrix.bincode");
-      if path.exists() {
-        println!("Loading tf_matrix...");
-        let mut buf = Vec::new();
-        File::open(path).unwrap()
-          .read_to_end(&mut buf).expect("Unable to read file");
-        let tf_matrix: Vec<Vec<f64>> = bincode::deserialize(&buf).unwrap();
-        tf_matrix
-      }
-      else {
-        println!("Saving tf_matrix...");
-        let mut tf_matrix: Vec<Vec<f64>> = Vec::new();
-        for post in x_set.clone() {
-          let mut tf_row: Vec<f64> = Vec::new();
-          for token in post.clone() {
-            let freq: f64 = tf(&post, &token);
-            tf_row.push(freq);
-          }
-          tf_matrix.push(tf_row);
-        }
-        let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
-        let tf_matrix_bytes = bincode::serialize(&tf_matrix).unwrap();
-        f.and_then(|mut f| f.write_all(&tf_matrix_bytes)).expect("Failed to write tf_matrix");
-        tf_matrix
-      }
-    };
+    // let tf_matrix = {
+    //   let path: &Path = Path::new("./tf_matrix.bincode");
+    //   if path.exists() {
+    //     println!("Loading tf_matrix...");
+    //     let mut buf = Vec::new();
+    //     File::open(path).unwrap()
+    //       .read_to_end(&mut buf).expect("Unable to read file");
+    //     let tf_matrix: Vec<Vec<f64>> = bincode::deserialize(&buf).unwrap();
+    //     tf_matrix
+    //   }
+    //   else {
+    //     println!("Saving tf_matrix...");
+    //     let mut tf_matrix: Vec<Vec<f64>> = Vec::new();
+    //     for post in x_set.clone() {
+    //       let mut tf_row: Vec<f64> = Vec::new();
+    //       for token in post.clone() {
+    //         let freq: f64 = tf(&post, &token);
+    //         tf_row.push(freq);
+    //       }
+    //       tf_matrix.push(tf_row);
+    //     }
+    //     let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
+    //     let tf_matrix_bytes = bincode::serialize(&tf_matrix).unwrap();
+    //     f.and_then(|mut f| f.write_all(&tf_matrix_bytes)).expect("Failed to write tf_matrix");
+    //     tf_matrix
+    //   }
+    // };
 
-    let idf_map: HashMap<String, f64> = {
-      let path: &Path = Path::new("./idf_map.bincode");
-      if path.exists() {
-        println!("Loading idf_map...");
-        let mut buf = Vec::new();
-        File::open(path).unwrap()
-          .read_to_end(&mut buf).expect("Unable to read file");
-        let idf_map: HashMap<String, f64> = bincode::deserialize(&buf).unwrap();
-        idf_map
-      }
-      else {
-        println!("Saving idf_map...\n");
-        let start: Instant = Instant::now();
-        let mut average_sequence_runtime: f64 = 0.0;
-        let mut idf_map: HashMap<String, f64> = HashMap::new();
-        for (i, token) in dictionary.keys().enumerate() {
-          let sequence_start: Instant = Instant::now();
-          let idf_val: f64 = idf(&x_set, &token);
-          idf_map.insert(token.to_string(), idf_val);
-          let sequence_runtime = sequence_start.elapsed().as_secs();
-          average_sequence_runtime += (sequence_runtime as f64 - average_sequence_runtime) / (i as f64 + 1.0);
-          let estimated_minutes = ((dictionary.len() - i) as f64 * average_sequence_runtime as f64) / 3600.0;
-          if start.elapsed().as_secs() % 60 == 0 {
-            println!("{} of {} idf_map entries created on avg in {} sec.  {} hours remaining", i, dictionary.len(), average_sequence_runtime, estimated_minutes);
-          }
-        }
-        let runtime = start.elapsed().as_secs();
-        println!("idf_map created in {} hours", runtime / 3600);
-        let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
-        let idf_map_bytes = bincode::serialize(&idf_map).unwrap();
-        f.and_then(|mut f| f.write_all(&idf_map_bytes)).expect("Failed to write idf_map");
-        idf_map
-      }
-    };
+    let start = Instant::now();
+    let df: DMatrix<f64> = DMatrix::from_fn(x_set_matrix.len(), count_row, |i, j| tf(&x_set_matrix[i], &x_set_matrix[i][j]));
+    println!("df: {} minutes", start.elapsed().as_secs() / 60);
+    let idf: DMatrix<f64> = DMatrix::from_fn(x_set_matrix.len(), count_row, |i, j| idf(x_set_matrix.clone(), &x_set_matrix[i][j]));
+    println!("idf: {} minutes", start.elapsed().as_secs() / 60);
+    let tfidf: DMatrix<f64> = df * idf;
+    println!("tfidf: {} minutes", start.elapsed().as_secs() / 60);
 
-    let mut x_matrix: Vec<Vec<f64>> = Vec::new();
-    for (i, post) in x_set.iter().enumerate() {
-      let mut row = Vec::new();
-      for (j, t) in post.iter().enumerate() {
-        let tf_idf: f64 = tf_matrix[i][j] * idf_map[t];
-        row.push(tf_idf);
-      }
-      x_matrix.push(row);
-    }
+    // let mut docs: Vec<Vec<(String, usize)>> = Vec::new();
+    // for (i, row) in x_set.iter().enumerate() {
+    //   let mut doc: Vec<(String, usize)> = Vec::new();
+    //   for (j, col) in row.iter().enumerate() {
+    //     doc.push((col.to_string(), tf_matrix[i][j] as usize));
+    //   }
+    //   docs.push(doc);
+    // }
+
+    // TODO - it is way to slow to calculate idf for each token in the dictionary
+    // let tf_idf_matrix: Vec<Vec<f64>> = {
+    //   let path: &Path = Path::new("./tf_idf_matrix.bincode");
+    //   if path.exists() {
+    //     println!("Loading tf_idf_matrix...");
+    //     let mut buf = Vec::new();
+    //     File::open(path).unwrap()
+    //       .read_to_end(&mut buf).expect("Unable to read file");
+    //     let tf_idf_matrix: Vec<Vec<f64>> = bincode::deserialize(&buf).unwrap();
+    //     tf_idf_matrix
+    //   }
+    //   else {
+    //     println!("Saving idf_map...\n");
+    //     let start: Instant = Instant::now();
+    //     let mut average_sequence_runtime: f64 = 0.0;
+    //     let mut tf_idf_matrix: Vec<Vec<f64>> = Vec::new();
+    //     for (i, doc) in docs.iter().enumerate() {
+    //       let sequence_start: Instant = Instant::now();
+    //       let mut average_token_runtime: f64 = 0.0;
+    //       let mut tf_idf_row: Vec<f64> = Vec::new();
+    //       for (j, (token, _)) in doc.iter().enumerate() {
+    //         let token_start = Instant::now();
+    //         let tf_idf: f64 = TfIdfDefault::tfidf(token, &docs[i], docs.iter());
+    //         tf_idf_row.push(tf_idf);
+    //         let token_runtime = token_start.elapsed().as_secs() as f64;
+    //         average_token_runtime += (token_runtime - average_token_runtime) / (j as f64 + 1.0);
+    //         if j % 50 == 0 {
+    //           println!("{}: {} / {} tokens, {} seconds per token", i, j, doc.len(), average_token_runtime);
+    //         }
+    //       }
+    //       tf_idf_matrix.push(tf_idf_row);
+    //       let sequence_runtime = sequence_start.elapsed().as_secs() as f64;
+    //       average_sequence_runtime += (sequence_runtime - average_sequence_runtime) / (i as f64 + 1.0);
+    //       let estimated_hours = ((x_set.len() - i) as f64 * average_sequence_runtime) / 3600.0;
+    //       println!("{} of {} sequences complete. Estimated time remaining: {} hours", i, x_set.len(), estimated_hours);
+    //     }
+    //     let runtime = start.elapsed().as_secs();
+    //     println!("idf_map created in {} hours", runtime / 3600);
+    //     let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
+    //     let tf_idf_matrix_bytes = bincode::serialize(&tf_idf_matrix).unwrap();
+    //     f.and_then(|mut f| f.write_all(&tf_idf_matrix_bytes)).expect("Failed to write idf_map");
+    //     tf_idf_matrix
+    //   }
+    // };
+
+    // let idf_map: HashMap<String, f64> = {
+    //   let path: &Path = Path::new("./idf_map.bincode");
+    //   if path.exists() {
+    //     println!("Loading idf_map...");
+    //     let mut buf = Vec::new();
+    //     File::open(path).unwrap()
+    //       .read_to_end(&mut buf).expect("Unable to read file");
+    //     let idf_map: HashMap<String, f64> = bincode::deserialize(&buf).unwrap();
+    //     idf_map
+    //   }
+    //   else {
+    //     println!("Saving idf_map...\n");
+    //     let start: Instant = Instant::now();
+    //     let mut average_sequence_runtime: f64 = 0.0;
+    //     let mut idf_map: HashMap<String, f64> = HashMap::new();
+    //     for (i, token) in dictionary.keys().enumerate() {
+    //       let sequence_start: Instant = Instant::now();
+    //       let idf_val: f64 = idf(&x_set, &token);
+    //       idf_map.insert(token.to_string(), idf_val);
+    //       let sequence_runtime = sequence_start.elapsed().as_secs();
+    //       average_sequence_runtime += (sequence_runtime as f64 - average_sequence_runtime) / (i as f64 + 1.0);
+    //       let estimated_minutes = ((dictionary.len() - i) as f64 * average_sequence_runtime as f64) / 3600.0;
+    //       if start.elapsed().as_secs() % 60 == 0 {
+    //         println!("{} of {} idf_map entries created on avg in {} sec.  {} hours remaining", i, dictionary.len(), average_sequence_runtime, estimated_minutes);
+    //       }
+    //     }
+    //     let runtime = start.elapsed().as_secs();
+    //     println!("idf_map created in {} hours", runtime / 3600);
+    //     let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
+    //     let idf_map_bytes = bincode::serialize(&idf_map).unwrap();
+    //     f.and_then(|mut f| f.write_all(&idf_map_bytes)).expect("Failed to write idf_map");
+    //     idf_map
+    //   }
+    // };
+
+    // let mut x_matrix: Vec<Vec<f64>> = Vec::new();
+    // for (i, post) in x_set.iter().enumerate() {
+    //   let mut row = Vec::new();
+    //   for (j, t) in post.iter().enumerate() {
+    //     let tf_idf: f64 = tf_matrix[i][j] * idf_map[t];
+    //     row.push(tf_idf);
+    //   }
+    //   x_matrix.push(row);
+    // }
   
-    println!("We obtain a {}x{} matrix of counts for the vocabulary entries", x_matrix.len(), x_matrix[0].len());
+    println!("We obtain a {}x{} matrix of counts for the vocabulary entries", tfidf.len(), tfidf.row(0).len());
 
     // Create f64 matrices from x_set.
     // let mut x_matrix: Vec<Vec<f64>> = Vec::new();
@@ -340,13 +420,19 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     //   }
     //   x_matrix.push(matrix);
     // }
+
+    let mut x_matrix: Vec<Vec<f64>> = Vec::new();
+    // Convert tfidf to a Vec<Vec<f64>>.
+    for row in tfidf.row_iter() {
+      let mut matrix: Vec<f64> = Vec::new();
+      for val in &row {
+        matrix.push(*val);
+      }
+      x_matrix.push(matrix);
+    }
   
     // Create f64 matrices for y_set.
-    let mut y_matrix: Vec<u8> = Vec::new();
-    for indicator in y_set {
-      let index: u8 = indicator.indicator;
-      y_matrix.push(index);
-    }
+    let y_matrix: Vec<u8> = y_set_matrix.iter().map(|x| *x).collect();
 
     let x_matrix_bytes = bincode::serialize(&x_matrix).expect("Can not serialize the matrix");
           File::create("x_matrix.bincode")
@@ -491,7 +577,8 @@ fn build_sets(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, leaf_a: u8, leaf_b: 
 
 fn main() -> Result<(), Error> {
   let training_set: Vec<Sample> = load_data();
-  let (x_matrix, y_matrix) = normalize(&training_set);
+  let count_row = training_set[0].posts[0].len();
+  let (x_matrix, y_matrix) = normalize(&training_set, count_row);
   tally(&y_matrix);
   // Build sets for an ensemble of models
   let (ie_x_matrix, ie_y_matrix) = build_sets(&x_matrix, &y_matrix, indicator::mb_flag::I, indicator::mb_flag::E);
