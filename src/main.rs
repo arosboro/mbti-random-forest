@@ -251,8 +251,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
       post.iter().filter(|t| *t == token).count() as f64
     };
     let idf = |x_set: &Vec<Post>, token: &str| -> f64 {
-      let count = x_set.iter().filter(|post| post.contains(&token.to_string())).count() as f64;
-      (x_set.len() as f64 / count).ln()
+      (x_set.len() as f64 / x_set.iter().filter(|post| post.contains(&token.to_string())).count() as f64).ln()
     };
 
     let tf_matrix = {
