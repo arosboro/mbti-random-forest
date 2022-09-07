@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{Write, Read};
 use std::path::Path;
+use std::time::Instant;
 use csv::Error;
 use serde::{
   Serialize, 
@@ -293,12 +294,23 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         idf_map
       }
       else {
-        println!("Saving idf_map...");
+        println!("Saving idf_map...\n");
+        let start: Instant = Instant::now();
+        let mut average_sequence_runtime: f64 = 0.0;
         let mut idf_map: HashMap<String, f64> = HashMap::new();
-        for token in dictionary.keys() {
+        for (i, token) in dictionary.keys().enumerate() {
+          let sequence_start: Instant = Instant::now();
           let idf_val: f64 = idf(&x_set, &token);
           idf_map.insert(token.to_string(), idf_val);
+          let sequence_runtime = sequence_start.elapsed().as_secs();
+          average_sequence_runtime += (sequence_runtime as f64 - average_sequence_runtime) / (i as f64 + 1.0);
+          let estimated_minutes = ((dictionary.len() - i) as f64 * average_sequence_runtime as f64) / 3600.0;
+          if start.elapsed().as_secs() % 60 == 0 {
+            println!("{} of {} idf_map entries created on avg in {} sec.  {} hours remaining", i, dictionary.len(), average_sequence_runtime, estimated_minutes);
+          }
         }
+        let runtime = start.elapsed().as_secs();
+        println!("idf_map created in {} hours", runtime / 3600);
         let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
         let idf_map_bytes = bincode::serialize(&idf_map).unwrap();
         f.and_then(|mut f| f.write_all(&idf_map_bytes)).expect("Failed to write idf_map");
