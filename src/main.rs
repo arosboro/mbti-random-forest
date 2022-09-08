@@ -305,7 +305,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     //   }
     // };
 
-    // Create TF*IDF corpus from x_set
+    // Closures to Create TF*IDF corpus from a corpus.
     // tf is the number of times a term appears in a document
     // idf is the inverse document frequency of a term e.g. N divided by how many posts contain the term
     // tf-idf = tf * log(N / df)
@@ -336,38 +336,132 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     };
 
     // Create a dense matrix of token identifiers.
-    println!("Creating a dense matrix of token identifiers...");
-    let mut start = Instant::now();
-    let dict_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| dictionary.get_key_value(&corpus[(i,j)]).unwrap().1.clone());
-    println!("dict_matrix: {} minutes", start.elapsed().as_secs() / 60);
+    let dict_matrix: DMatrix<f64> = {
+      // let path = Path::new("./dict_matrix.bincode");
+      // if path.exists() {
+      //   println!("Loading dict_matrix...");
+      //   let mut buf = Vec::new();
+      //   File::open(path).unwrap()
+      //     .read_to_end(&mut buf).expect("Unable to read file");
+      //   let dict_matrix: DMatrix<f64> = bincode::deserialize(&buf).unwrap();
+      //   dict_matrix
+      // }
+      // else {
+        println!("Creating a dense matrix of token identifiers...");
+        let start = Instant::now();
+        let dict_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| dictionary.get_key_value(&corpus[(i,j)]).unwrap().1.clone());
+        println!("dict_matrix: {} minutes", start.elapsed().as_secs() / 60);
+        // println!("Saving dict_matrix...");
+        // let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
+        // let dict_matrix_bytes = bincode::serialize(&dict_matrix).unwrap();
+        // f.and_then(|mut f| f.write_all(&dict_matrix_bytes)).expect("Failed to write dict_matrix");
+        dict_matrix
+      // }
+    };
 
     // Create a dense matrix of term frequencies.
     println!("Creating a dense matrix of term frequencies...");
-    start = Instant::now();
-    let tf_matrix: DMatrix<f64> = DMatrix::from_fn(dict_matrix.nrows(), dict_matrix.ncols(), |i, j| {
-      tf(dict_matrix.slice((i, 0), (1, dict_matrix.ncols())), &dict_matrix[(i, j)])
-    });
-    println!("tf_matrix: {} minutes", start.elapsed().as_secs() / 60);
+    let tf_matrix: DMatrix<f64> = {
+      // let path = Path::new("./tf_matrix.bincode");
+      // if path.exists() {
+      //   println!("Loading tf_matrix...");
+      //   let mut buf = Vec::new();
+      //   File::open(path).unwrap()
+      //     .read_to_end(&mut buf).expect("Unable to read file");
+      //   let tf_matrix: DMatrix<f64> = bincode::deserialize(&buf).unwrap();
+      //   tf_matrix
+      // }
+      // else {
+        println!("Creating a dense matrix of term frequencies...");
+        let start = Instant::now();
+        let tf_matrix: DMatrix<f64> = DMatrix::from_fn(dict_matrix.nrows(), dict_matrix.ncols(), |i, j| -> f64 {
+          tf(dict_matrix.slice((i, 0), (1, dict_matrix.ncols())), &dict_matrix[(i, j)])
+        });
+        println!("tf_matrix: {} minutes", start.elapsed().as_secs() / 60);
+        // println!("Saving tf_matrix...");
+        // let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
+        // let tf_matrix_bytes = bincode::serialize(&tf_matrix).unwrap();
+        // f.and_then(|mut f| f.write_all(&tf_matrix_bytes)).expect("Failed to write tf_matrix");
+        tf_matrix
+      // }
+    };
+    
 
     // Create a matrix 1D of token identifiers and their Inverse document frequencies.
-    println!("Creating a 1D matrix of token identifiers and their Inverse document frequencies...");
-    start = Instant::now();
-    let idf_dict_reference: DMatrix<f64> = DMatrix::from_fn(dictionary.len(), 1, |i, _| idf(dict_matrix.clone(), dictionary.iter().nth(i).unwrap().1));
-    println!("idf_dict_reference: {} minutes", start.elapsed().as_secs() / 60);
+    let idf_dict_reference: DMatrix<f64> = {
+      // let path = Path::new("./idf_dict_reference.bincode");
+      // if path.exists() {
+      //   println!("Loading idf_dict_reference...");
+      //   let mut buf = Vec::new();
+      //   File::open(path).unwrap()
+      //     .read_to_end(&mut buf).expect("Unable to read file");
+      //   let idf_dict_reference: DMatrix<f64> = bincode::deserialize(&buf).unwrap();
+      //   idf_dict_reference
+      // }
+      // else {
+        println!("Creating a matrix 1D of token identifiers and their Inverse document frequencies...");
+        let start = Instant::now();
+        let idf_dict_reference: DMatrix<f64> = DMatrix::from_fn(dictionary.len(), 1, |i, _| {
+          idf(dict_matrix.clone(), dictionary.iter().nth(i).unwrap().1)
+        });
+        println!("idf_dict_reference: {} minutes", start.elapsed().as_secs() / 60);
+        // println!("Saving idf_dict_reference...");
+        // let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
+        // let idf_dict_reference_bytes = bincode::serialize(&idf_dict_reference).unwrap();
+        // f.and_then(|mut f| f.write_all(&idf_dict_reference_bytes)).expect("Failed to write idf_dict_reference");
+        idf_dict_reference
+      // }
+    };
 
     // Create a dense matrix of idf values.
-    println!("Creating a dense matrix of idf values...");
-    start = Instant::now();
-    let idf_matrix: DMatrix<f64> = DMatrix::from_fn(dict_matrix.nrows(), dict_matrix.ncols(), |i, j| {
-      idf_dict_reference[(tf_matrix[(i, j)] as usize, 0)]
-    });
-    println!("idf_matrix: {} minutes", start.elapsed().as_secs() / 60);
+    let idf_matrix: DMatrix<f64> = {
+      // let path = Path::new("./idf_matrix.bincode");
+      // if path.exists() {
+      //   println!("Loading idf_matrix...");
+      //   let mut buf = Vec::new();
+      //   File::open(path).unwrap()
+      //     .read_to_end(&mut buf).expect("Unable to read file");
+      //   let idf_matrix: DMatrix<f64> = bincode::deserialize(&buf).unwrap();
+      //   idf_matrix
+      // }
+      // else {
+        println!("Creating a dense matrix of idf values...");
+        let start = Instant::now();
+        let idf_matrix: DMatrix<f64> = DMatrix::from_fn(dict_matrix.nrows(), dict_matrix.ncols(), |i, j| {
+          idf_dict_reference[(tf_matrix[(i, j)] as usize, 0)]
+        });
+        println!("idf_matrix: {} minutes", start.elapsed().as_secs() / 60);
+        // println!("Saving idf_matrix...");
+        // let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
+        // let idf_matrix_bytes = bincode::serialize(&idf_matrix).unwrap();
+        // f.and_then(|mut f| f.write_all(&idf_matrix_bytes)).expect("Failed to write idf_matrix");
+        idf_matrix
+      // }
+    };
 
     // Finally, create the tf-idf matrix by multiplying.
-    println!("Creating the tf-idf matrix by multiplying... (last step in preprocessing).");
-    start = Instant::now();
-    let tf_idf = tf_matrix * idf_matrix;
-    println!("df_idf: {} minutes", start.elapsed().as_secs() / 60);
+    let tf_idf: DMatrix<f64> = {
+      // let path = Path::new("./tf_idf.bincode");
+      // if (path.exists()) {
+      //   println!("Loading tf_idf...");
+      //   let mut buf = Vec::new();
+      //   File::open(path).unwrap()
+      //     .read_to_end(&mut buf).expect("Unable to read file");
+      //   let tf_idf: DMatrix<f64> = bincode::deserialize(&buf).unwrap();
+      //   tf_idf
+      // }
+      // else {
+        println!("Creating the tf-idf matrix by multiplying...");
+        let start = Instant::now();
+        let tf_idf: DMatrix<f64> = tf_matrix.clone() * idf_matrix.clone();
+        println!("tf_idf: {} minutes", start.elapsed().as_secs() / 60);
+        // println!("Saving tf_idf...");
+        // let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
+        // let tf_idf_bytes = bincode::serialize(&tf_idf).unwrap();
+        // f.and_then(|mut f| f.write_all(&tf_idf_bytes)).expect("Failed to write tf_idf");
+        tf_idf
+      // }
+    };
 
     // println!("Creating tf from corpus...");
     // let mut start = Instant::now();
@@ -481,7 +575,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     //   corpus.push(row);
     // }
   
-    println!("We obtain a {}x{} matrix of counts for the vocabulary entries", tf_idf.len(), tf_idf.row(0).len());
+    println!("We obtain a {}x{} matrix of counts for the vocabulary entries", tf_idf.nrows(), tf_idf.ncols());
 
     // Create f64 matrices from x_set.
     // let mut corpus: Vec<Vec<f64>> = Vec::new();
@@ -516,8 +610,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
             .and_then(|mut f| f.write_all(&classifiers_bytes))
             .expect("Can not persist classifiers");
     (corpus, classifiers)
-  } 
-  else {
+  } else {
     println!("Loading x and y matrices...");
     let mut x_buf = Vec::new();
     let mut y_buf = Vec::new();
