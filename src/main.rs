@@ -247,31 +247,53 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     }
     println!("{} unique labels", unique_labels.len());
   
-    let dictionary: Dictionary = {
-      let path: &Path = Path::new("./dictionary.bincode");
-      if path.exists() {
+    let (dictionary, df_index) = {
+      let path_dict: &Path = Path::new("./dictionary.bincode");
+      let path_df: &Path = Path::new("./df_index.bincode");
+      if path_dict.exists() && path_df.exists() {
         println!("Loading dictionary...");
         let mut buf = Vec::new();
-        File::open(path).unwrap()
+        File::open(path_dict).unwrap()
           .read_to_end(&mut buf).expect("Unable to read file");
         let dictionary: Dictionary = bincode::deserialize(&buf).unwrap();
-        dictionary
+        println!("Loading df_index...");
+        buf = Vec::new();
+        File::open(path_df).unwrap()
+          .read_to_end(&mut buf).expect("Unable to read file");
+        let df_index: Dictionary = bincode::deserialize(&buf).unwrap();
+        (dictionary, df_index)
       }
       else {
-        println!("Saving dictionary...");
+        println!("Saving dictionary and df_index...");
         // Create a dictionary indexing unique tokens.
+        // Also create a df_index containing the number of documents each token appears in.
         let mut dictionary: Dictionary = HashMap::new();
+        let mut df_major: HashMap<String, f64> = HashMap::new();
         for post in x_set {
+          let df_minor: HashMap<String, f64> = post.iter().fold(HashMap::new(), |mut acc, token| {
+            *acc.entry(token.to_owned()).or_insert(0.0) += 1.0;
+            acc
+          });
           for token in post {
             if !dictionary.contains_key(&token.to_string()) {
-              dictionary.insert(token.to_string(), (dictionary.len())as f64);
+              dictionary.insert(token.to_string(), dictionary.len() as f64);
             }
           }
+          df_minor.iter().for_each(|(token, _)| {
+            *df_major.entry(token.to_string()).or_insert(0.0) += 1.0;
+          });
         }
-        let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
+        // Serialize the dictionary.
+        println!("Saving dictionary...");
+        let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path_dict);
         let dictionary_bytes = bincode::serialize(&dictionary).unwrap();
         f.and_then(|mut f| f.write_all(&dictionary_bytes)).expect("Failed to write dictionary");
-        dictionary
+        // Serialize the df_index.
+        println!("Saving df_index...");
+        f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path_df);
+        let df_index_bytes = bincode::serialize(&df_major).unwrap();
+        f.and_then(|mut f| f.write_all(&df_index_bytes)).expect("Failed to write df_index");
+        (dictionary, df_major)
       }
     };
 
@@ -305,12 +327,12 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     //   }
     // };
 
-    // Closures to Create TF*IDF corpus from a corpus.
+    // Closures to Create TF*IDF matrices from a corpus.
     // tf is the number of times a term appears in a document
     // idf is the inverse document frequency of a term e.g. N divided by how many posts contain the term
     // tf-idf = tf * log(N / df)
     // Where N is number of documents and df is number of documents containing the term.
-    let tf = |doc: DMatrixSlice<f64>, term: &f64| -> f64 {
+    let tf = |doc: DMatrixSlice<String>, term: &String| -> f64 {
       DMatrix::from_fn(doc.nrows(), doc.ncols(), |i, j| {
         if doc[(i, j)] == *term {
           1.0
@@ -320,47 +342,36 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         }
       }).sum()
     };
-    let idf = |corpus: DMatrix<f64>, term: &f64| -> f64 {
-      let frequency: f64 = DMatrix::from_fn(corpus.nrows(), 1, |i, j| {
-        let doc = corpus.slice((i, j), (1, corpus.ncols()));
-        if doc.iter().any(|x| x == term) {
-          1.0
-        }
-        else {
-          0.0
-        }
-      }).sum();
+    let idf = |term: &String| -> f64 {
       // Smooth inverse formula by adding 1.0 to denominator to prevent division by zero
-      let inverse = (corpus.nrows() as f64) / frequency + 1.0 as f64;
-      inverse.ln()
+      (corpus.nrows() as f64 / (df_index[term] + 1.0)).ln() as f64
     };
 
-    // Create a dense matrix of token identifiers.
-    let dict_matrix: DMatrix<f64> = {
-      // let path = Path::new("./dict_matrix.bincode");
-      // if path.exists() {
-      //   println!("Loading dict_matrix...");
-      //   let mut buf = Vec::new();
-      //   File::open(path).unwrap()
-      //     .read_to_end(&mut buf).expect("Unable to read file");
-      //   let dict_matrix: DMatrix<f64> = bincode::deserialize(&buf).unwrap();
-      //   dict_matrix
-      // }
-      // else {
-        println!("Creating a dense matrix of token identifiers...");
-        let start = Instant::now();
-        let dict_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| dictionary.get_key_value(&corpus[(i,j)]).unwrap().1.clone());
-        println!("dict_matrix: {} minutes", start.elapsed().as_secs() / 60);
-        // println!("Saving dict_matrix...");
-        // let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
-        // let dict_matrix_bytes = bincode::serialize(&dict_matrix).unwrap();
-        // f.and_then(|mut f| f.write_all(&dict_matrix_bytes)).expect("Failed to write dict_matrix");
-        dict_matrix
-      // }
-    };
+    // // Create a dense matrix of token identifiers.
+    // let dict_matrix: DMatrix<f64> = {
+    //   // let path = Path::new("./dict_matrix.bincode");
+    //   // if path.exists() {
+    //   //   println!("Loading dict_matrix...");
+    //   //   let mut buf = Vec::new();
+    //   //   File::open(path).unwrap()
+    //   //     .read_to_end(&mut buf).expect("Unable to read file");
+    //   //   let dict_matrix: DMatrix<f64> = bincode::deserialize(&buf).unwrap();
+    //   //   dict_matrix
+    //   // }
+    //   // else {
+    //     println!("Creating a dense matrix of token identifiers...");
+    //     let start = Instant::now();
+    //     let dict_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| dictionary.get_key_value(&corpus[(i,j)]).unwrap().1.clone());
+    //     println!("dict_matrix: {} minutes", start.elapsed().as_secs() / 60);
+    //     // println!("Saving dict_matrix...");
+    //     // let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
+    //     // let dict_matrix_bytes = bincode::serialize(&dict_matrix).unwrap();
+    //     // f.and_then(|mut f| f.write_all(&dict_matrix_bytes)).expect("Failed to write dict_matrix");
+    //     dict_matrix
+    //   // }
+    // };
 
     // Create a dense matrix of term frequencies.
-    println!("Creating a dense matrix of term frequencies...");
     let tf_matrix: DMatrix<f64> = {
       // let path = Path::new("./tf_matrix.bincode");
       // if path.exists() {
@@ -374,8 +385,8 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
       // else {
         println!("Creating a dense matrix of term frequencies...");
         let start = Instant::now();
-        let tf_matrix: DMatrix<f64> = DMatrix::from_fn(dict_matrix.nrows(), dict_matrix.ncols(), |i, j| -> f64 {
-          tf(dict_matrix.slice((i, 0), (1, dict_matrix.ncols())), &dict_matrix[(i, j)])
+        let tf_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
+          tf(corpus.slice((i, 0), (1, corpus.ncols())), &corpus[(i, j)])
         });
         println!("tf_matrix: {} minutes", start.elapsed().as_secs() / 60);
         // println!("Saving tf_matrix...");
@@ -386,32 +397,6 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
       // }
     };
     
-
-    // Create a matrix 1D of token identifiers and their Inverse document frequencies.
-    let idf_dict_reference: DMatrix<f64> = {
-      // let path = Path::new("./idf_dict_reference.bincode");
-      // if path.exists() {
-      //   println!("Loading idf_dict_reference...");
-      //   let mut buf = Vec::new();
-      //   File::open(path).unwrap()
-      //     .read_to_end(&mut buf).expect("Unable to read file");
-      //   let idf_dict_reference: DMatrix<f64> = bincode::deserialize(&buf).unwrap();
-      //   idf_dict_reference
-      // }
-      // else {
-        println!("Creating a matrix 1D of token identifiers and their Inverse document frequencies...");
-        let start = Instant::now();
-        let idf_dict_reference: DMatrix<f64> = DMatrix::from_fn(dictionary.len(), 1, |i, _| {
-          idf(dict_matrix.clone(), dictionary.iter().nth(i).unwrap().1)
-        });
-        println!("idf_dict_reference: {} minutes", start.elapsed().as_secs() / 60);
-        // println!("Saving idf_dict_reference...");
-        // let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
-        // let idf_dict_reference_bytes = bincode::serialize(&idf_dict_reference).unwrap();
-        // f.and_then(|mut f| f.write_all(&idf_dict_reference_bytes)).expect("Failed to write idf_dict_reference");
-        idf_dict_reference
-      // }
-    };
 
     // Create a dense matrix of idf values.
     let idf_matrix: DMatrix<f64> = {
@@ -427,8 +412,8 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
       // else {
         println!("Creating a dense matrix of idf values...");
         let start = Instant::now();
-        let idf_matrix: DMatrix<f64> = DMatrix::from_fn(dict_matrix.nrows(), dict_matrix.ncols(), |i, j| {
-          idf_dict_reference[(tf_matrix[(i, j)] as usize, 0)]
+        let idf_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
+          idf(&corpus[(i, j)])
         });
         println!("idf_matrix: {} minutes", start.elapsed().as_secs() / 60);
         // println!("Saving idf_matrix...");
@@ -459,7 +444,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         // let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
         // let tf_idf_bytes = bincode::serialize(&tf_idf).unwrap();
         // f.and_then(|mut f| f.write_all(&tf_idf_bytes)).expect("Failed to write tf_idf");
-        tf_idf
+        tf_idf.normalize()
       // }
     };
 

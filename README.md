@@ -2,6 +2,16 @@
 
 ## With Term Frequency-Inverse Document Frequency Index trial 3
 Calculate Vec<Vec<64>> TF-IDF dense matrix for x_train,y_train.  Use SVC model for Generic algorithm.
+Saving samples...
+Saving x and y matrices...
+106067 x samples
+106067 y labels
+16 unique labels
+Saving dictionary...
+Dictionary size: 183130
+Creating tf from corpus...
+tf: 71 minutes
+Creating idf from corpus...
 
 ## Bigger Better Data Set trial 2
 Removed stopwords, underfitting generic model, but ensemble of 4 classifier models is more accurate than trial 1
