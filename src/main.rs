@@ -213,7 +213,7 @@ fn load_data() -> Vec<Sample> {
       let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
       let samples_bytes = bincode::serialize(&samples_truncated).unwrap();
       f.and_then(|mut f| f.write_all(&samples_bytes)).expect("Failed to write samples");
-      samples
+      samples_truncated
     }
   };
   samples
