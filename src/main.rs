@@ -185,16 +185,11 @@ fn load_data() -> Vec<Sample> {
           Err(e) => println!("Error: {}", e),
         }
       }
-      let mut count_row = 0;
+      let mut count_row = samples[0].posts[0].len();
       for sample in &samples {
         for post in &sample.posts {
           if post.len() < count_row {
-            if count_row == 0 {
-              count_row = post.len();
-            }
-            else if post.len() < count_row {
-              count_row = post.len();
-            }
+            count_row = post.len();
           }
         }
       }
