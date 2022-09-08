@@ -219,7 +219,7 @@ fn load_data() -> Vec<Sample> {
   samples
 }
 
-fn normalize(training_set: &Vec<Sample>, num_cols: usize) -> (Vec<Vec<f64>>, Vec<u8>) {
+fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
   let path_fx = Path::new("./x_matrix.bincode");
   let path_fy = Path::new("./y_matrix.bincode");
   if !path_fx.exists() || !path_fy.exists() {
@@ -306,31 +306,36 @@ fn normalize(training_set: &Vec<Sample>, num_cols: usize) -> (Vec<Vec<f64>>, Vec
     // };
 
     // Create TF*IDF x_matrix from x_set
-    // tf is the number of times a token appears in a post
-    // idf is the inverse document frequency of a token e.g. how many posts contain the token
+    // tf is the number of times a term appears in a document
+    // idf is the inverse document frequency of a term e.g. N divided by how many posts contain the term
     // tf-idf = tf * log(N / df)
     // Where N is number of documents and df is number of documents containing the term.
-    let tf = |row: DMatrixSlice<String>, token: &str| -> f64 {
-      row.iter().filter(|x| x == &&token.to_string()).count() as f64
+    let tf = |row: DMatrixSlice<String>, term: &str| -> f64 {
+      DMatrix::from_fn(row.nrows(), row.ncols(), |i, j| row[(i, j)].to_string() == term)
+        .iter()
+        .filter(|x| **x)
+        .count() as f64
     };
     // it takes way too long... e.g. 5.3 seconds per call
-    let idf = |corpus: DMatrix<String>, token: &str| -> f64 {
-      let doc_count: f64 = corpus.len() as f64;
-      let freq_in_docs = corpus.row_iter().filter(|x| x.iter().filter(|y| y == &&token.to_string()).count() > 0).count() as f64;
-      (doc_count / freq_in_docs).ln()
+    let idf = |corpus: DMatrix<String>, term: &str| -> f64 {
+      let frequency = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| corpus[(i, j)].to_string() == term)
+        .row_iter()
+        .filter(|row| row.iter().any(|x| *x))
+        .count() as f64;
+      (corpus.len() as f64 / frequency + 1.0).ln() // Smooth idf by adding 1.0 to denominator to prevent division by zero
     };
 
     println!("Creating tf from x_matrix...");
     let mut start = Instant::now();
-    let tf: DMatrix<f64> = DMatrix::from_fn(x_matrix.len(), num_cols, |i, j| tf(x_matrix.slice((i, 0), (1, num_cols)), &x_matrix[(i, j)]));
-    println!("df: {} minutes", start.elapsed().as_secs() / 60);
+    let tf_matrix: DMatrix<f64> = DMatrix::from_fn(x_matrix.nrows(), x_matrix.ncols(), |i, j| tf(x_matrix.slice((i, 0), (1, x_matrix.ncols())), &x_matrix[(i, j)]));
+    println!("tf: {} minutes", start.elapsed().as_secs() / 60);
     println!("Creating idf from x_matrix...");
     start = Instant::now();
-    let idf: DMatrix<f64> = DMatrix::from_fn(x_matrix.len(), num_cols, |i, j| idf(x_matrix.clone(), &x_matrix[(i, j)]));
+    let idf_matrix: DMatrix<f64> = DMatrix::from_fn(x_matrix.nrows(), x_matrix.ncols(), |i, j| idf(x_matrix.clone(), &x_matrix[(i, j)]));
     println!("idf: {} minutes", start.elapsed().as_secs() / 60);
     print!("Creating tf-idf matrix...");
     start = Instant::now();
-    let tfidf: DMatrix<f64> = tf * idf;
+    let tfidf: DMatrix<f64> = tf_matrix * idf_matrix;
     println!("tfidf: {} minutes", start.elapsed().as_secs() / 60);
 
     // let mut docs: Vec<Vec<(String, usize)>> = Vec::new();
@@ -601,8 +606,7 @@ fn build_sets(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, leaf_a: u8, leaf_b: 
 
 fn main() -> Result<(), Error> {
   let training_set: Vec<Sample> = load_data();
-  let count_row = training_set.get(0).unwrap().posts.get(0).unwrap().len();
-  let (x_matrix, y_matrix) = normalize(&training_set, count_row);
+  let (x_matrix, y_matrix) = normalize(&training_set);
   tally(&y_matrix);
   // Build sets for an ensemble of models
   let (ie_x_matrix, ie_y_matrix) = build_sets(&x_matrix, &y_matrix, indicator::mb_flag::I, indicator::mb_flag::E);
