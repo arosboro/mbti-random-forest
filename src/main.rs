@@ -226,7 +226,7 @@ fn normalize(training_set: &Vec<Sample>, count_row: usize) -> (Vec<Vec<f64>>, Ve
     let y_set: Vec<u8> = training_set.iter().map(|x| x.indicator.indicator).collect();
     println!("{} samples", x_set.len());
 
-    let x_set_matrix: DMatrix<Post> = DMatrix::from_vec(x_set.len(), 500, x_set);
+    let x_set_matrix: DMatrix<Post> = DMatrix::from_vec(x_set.len(), count_row, x_set);
     let y_set_matrix: DMatrix<u8> = DMatrix::from_vec(y_set.len(), 1, y_set);
    
     // Deterimine unique labels
