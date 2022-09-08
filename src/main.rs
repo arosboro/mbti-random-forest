@@ -188,20 +188,27 @@ fn load_data() -> Vec<Sample> {
       let mut count_row = samples[0].posts[0].len();
       for sample in &samples {
         for post in &sample.posts {
-          if post.len() < count_row {
+          if post.len() < count_row && post.len() > 0 {
             count_row = post.len();
           }
         }
       }
-      let mut samples_truncated: Vec<Vec<String>>  = Vec::new();
+      let mut samples_truncated: Vec<Sample>  = Vec::new();
       for sample in &samples {
+        let mut truncated_sample: Sample = Sample {
+          indicator: sample.indicator,
+          posts: Vec::new(),
+        };
         for post in &sample.posts {
           let mut post_truncated: Vec<String> = Vec::new();
-          for i in 0..count_row {
-            post_truncated[i] = post[i].to_owned();
+          if post.len() > 0 {
+            for i in 0..count_row {
+              post_truncated[i] = post[i].to_owned();
+            }
+            truncated_sample.posts.push(post_truncated);
           }
-          samples_truncated.push(post_truncated);
         }
+        samples_truncated.push(truncated_sample);
       };
       let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
       let samples_bytes = bincode::serialize(&samples_truncated).unwrap();
