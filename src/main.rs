@@ -20,7 +20,7 @@ use vtext::tokenize::*;
 use rust_stemmers::{Algorithm, Stemmer};
 use regex::Regex;
 use stopwords::{Spark, Language, Stopwords};
-use nalgebra::DMatrix;
+use nalgebra::{DMatrix, DMatrixSlice};
 
 
 #[derive(Debug, Deserialize)]
@@ -219,23 +219,29 @@ fn load_data() -> Vec<Sample> {
   samples
 }
 
-fn normalize(training_set: &Vec<Sample>, count_row: usize) -> (Vec<Vec<f64>>, Vec<u8>) {
+fn normalize(training_set: &Vec<Sample>, num_cols: usize) -> (Vec<Vec<f64>>, Vec<u8>) {
   let path_fx = Path::new("./x_matrix.bincode");
   let path_fy = Path::new("./y_matrix.bincode");
   if !path_fx.exists() || !path_fy.exists() {
     println!("Saving x and y matrices...");
-    let x_set: Vec<Vec<String>> = training_set.iter().flat_map(|x| x.posts.iter()).cloned().collect();
+    let mut x_set: Vec<Vec<String>> = Vec::new();
+    for sample in training_set.iter() {
+      for post in sample.posts.iter() {
+        x_set.push(post.to_owned());
+      }
+    };
     let y_set: Vec<u8> = training_set.iter().map(|x| x.indicator.indicator).collect();
-    println!("{} samples", x_set.len());
+    println!("{} x samples", x_set.len());
+    println!("{} y labels", y_set.len());
 
-    let x_set_matrix: DMatrix<Post> = DMatrix::from_vec(x_set.len(), count_row, x_set);
-    let y_set_matrix: DMatrix<u8> = DMatrix::from_vec(y_set.len(), 1, y_set);
+    let x_matrix: DMatrix<String> = DMatrix::from_fn(x_set.len(), x_set[0].len(), |i, j| x_set[i][j].to_owned());
+    let y_matrix: DMatrix<u8> = DMatrix::from_fn(y_set.len(), 1, |i, _| y_set[i]);
    
     // Deterimine unique labels
     let mut unique_labels: Vec<String> = Vec::new();
-    for label in y_set_matrix.iter() {
+    for label in y_set.iter() {
       let mbti = MBTI{ indicator: *label };
-      if !unique_labels.contains(&label.to_string()) {
+      if !unique_labels.contains(&mbti.to_string()) {
         unique_labels.push(mbti.to_string());
       }
     }
@@ -255,7 +261,7 @@ fn normalize(training_set: &Vec<Sample>, count_row: usize) -> (Vec<Vec<f64>>, Ve
         println!("Saving dictionary...");
         // Create a dictionary indexing unique tokens.
         let mut dictionary: Dictionary = HashMap::new();
-        for post in &x_set_matrix {
+        for post in x_set {
           for token in post {
             if !dictionary.contains_key(&token.to_string()) {
               dictionary.insert(token.to_string(), dictionary.len() as f64);
@@ -270,19 +276,6 @@ fn normalize(training_set: &Vec<Sample>, count_row: usize) -> (Vec<Vec<f64>>, Ve
     };
 
     println!("Dictionary size: {}", dictionary.len());
-
-    // Create TF*IDF x_matrix from x_set
-    // tf is the number of times a token appears in a post
-    // idf is the inverse document frequency of a token e.g. how many posts contain the token
-    // tf-idf = tf * log(N / df)
-    // Where N is number of documents and df is number of documents containing the term.
-    let tf = |post: &Post, token: &str| -> f64 {
-      post.iter().filter(|t| *t == token).count() as f64
-    };
-    // it takes way too long... e.g. 5.3 seconds per call
-    let idf = |x_set: DMatrix<Post>, token: &str| -> f64 {
-      (x_set.len() as f64 / x_set.iter().filter(|post| post.contains(&token.to_string())).count() as f64).ln()
-    };
 
     // let tf_matrix = {
     //   let path: &Path = Path::new("./tf_matrix.bincode");
@@ -312,12 +305,32 @@ fn normalize(training_set: &Vec<Sample>, count_row: usize) -> (Vec<Vec<f64>>, Ve
     //   }
     // };
 
-    let start = Instant::now();
-    let df: DMatrix<f64> = DMatrix::from_fn(x_set_matrix.len(), count_row, |i, j| tf(&x_set_matrix[i], &x_set_matrix[i][j]));
+    // Create TF*IDF x_matrix from x_set
+    // tf is the number of times a token appears in a post
+    // idf is the inverse document frequency of a token e.g. how many posts contain the token
+    // tf-idf = tf * log(N / df)
+    // Where N is number of documents and df is number of documents containing the term.
+    let tf = |row: DMatrixSlice<String>, token: &str| -> f64 {
+      row.iter().filter(|x| x == &&token.to_string()).count() as f64
+    };
+    // it takes way too long... e.g. 5.3 seconds per call
+    let idf = |corpus: DMatrix<String>, token: &str| -> f64 {
+      let doc_count: f64 = corpus.len() as f64;
+      let freq_in_docs = corpus.row_iter().filter(|x| x.iter().filter(|y| y == &&token.to_string()).count() > 0).count() as f64;
+      (doc_count / freq_in_docs).ln()
+    };
+
+    println!("Creating tf from x_matrix...");
+    let mut start = Instant::now();
+    let tf: DMatrix<f64> = DMatrix::from_fn(x_matrix.len(), num_cols, |i, j| tf(x_matrix.slice((i, 0), (1, num_cols)), &x_matrix[(i, j)]));
     println!("df: {} minutes", start.elapsed().as_secs() / 60);
-    let idf: DMatrix<f64> = DMatrix::from_fn(x_set_matrix.len(), count_row, |i, j| idf(x_set_matrix.clone(), &x_set_matrix[i][j]));
+    println!("Creating idf from x_matrix...");
+    start = Instant::now();
+    let idf: DMatrix<f64> = DMatrix::from_fn(x_matrix.len(), num_cols, |i, j| idf(x_matrix.clone(), &x_matrix[(i, j)]));
     println!("idf: {} minutes", start.elapsed().as_secs() / 60);
-    let tfidf: DMatrix<f64> = df * idf;
+    print!("Creating tf-idf matrix...");
+    start = Instant::now();
+    let tfidf: DMatrix<f64> = tf * idf;
     println!("tfidf: {} minutes", start.elapsed().as_secs() / 60);
 
     // let mut docs: Vec<Vec<(String, usize)>> = Vec::new();
@@ -443,7 +456,7 @@ fn normalize(training_set: &Vec<Sample>, count_row: usize) -> (Vec<Vec<f64>>, Ve
     }
   
     // Create f64 matrices for y_set.
-    let y_matrix: Vec<u8> = y_set_matrix.iter().map(|y| *y).collect();
+    let y_matrix: Vec<u8> = y_matrix.iter().map(|y| *y).collect();
 
     let x_matrix_bytes = bincode::serialize(&x_matrix).expect("Can not serialize the matrix");
           File::create("x_matrix.bincode")
