@@ -310,18 +310,26 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     // idf is the inverse document frequency of a term e.g. N divided by how many posts contain the term
     // tf-idf = tf * log(N / df)
     // Where N is number of documents and df is number of documents containing the term.
-    let tf = |row: DMatrixSlice<String>, term: &str| -> f64 {
-      DMatrix::from_fn(row.nrows(), row.ncols(), |i, j| row[(i, j)].to_string() == term)
-        .iter()
-        .filter(|x| **x)
-        .count() as f64
+    let tf = |doc: DMatrixSlice<String>, term: &str| -> f64 {
+      DMatrix::from_fn(doc.nrows(), doc.ncols(), |i, j| {
+        if doc[(i, j)] == term {
+          1.0
+        }
+        else {
+          0.0
+        }
+      }).sum()
     };
-    // it takes way too long... e.g. 5.3 seconds per call
     let idf = |corpus: DMatrix<String>, term: &str| -> f64 {
-      let frequency = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| corpus[(i, j)].to_string() == term)
-        .row_iter()
-        .filter(|row| row.iter().any(|x| *x))
-        .count() as f64;
+      let frequency: f64 = DMatrix::from_fn(corpus.nrows(), 1, |i, j| {
+        let doc = corpus.slice((i, j), (1, corpus.ncols()));
+        if doc.iter().any(|x| x == term) {
+          1.0
+        }
+        else {
+          0.0
+        }
+      }).sum();
       (corpus.len() as f64 / frequency + 1.0).ln() // Smooth idf by adding 1.0 to denominator to prevent division by zero
     };
 
