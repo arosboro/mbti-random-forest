@@ -162,20 +162,6 @@ fn load_data() -> Vec<Sample> {
         Regex::new(r"[^a-zA-Z0-9 ]").unwrap(),
         Regex::new(r"\s+").unwrap(),
       ];
-      let mut count_row = 0;
-      for row in reader.deserialize::<Row>() {
-        match row {
-          Ok(row) => {
-            for post in row.posts.split("|||") {
-              let count = tokenize(post, &expressions).len();
-              if count > count_row {
-                count_row = count;
-              }
-            }
-          }
-          Err(e) => println!("Error: {}", e),
-        }
-      }
       for row in reader.deserialize::<Row>() {
         match row {
           Ok(row) => {
@@ -186,10 +172,10 @@ fn load_data() -> Vec<Sample> {
 
             for post in row.posts.split("|||") {
               let tokens = tokenize(post, &expressions);
-              let mut post_vec = vec!["".to_string(); count_row];
+              let mut post_vec = Vec::new();
               if tokens.len() > 0 {
                 tokens.iter().enumerate().for_each(|(i, _)| {
-                  post_vec[i] = tokens[i].to_owned();
+                  post_vec.push(tokens[i].to_owned());
                 });
                 sample.posts.push(post_vec);
               }
@@ -199,8 +185,31 @@ fn load_data() -> Vec<Sample> {
           Err(e) => println!("Error: {}", e),
         }
       }
+      let mut count_row = 0;
+      for sample in &samples {
+        for post in &sample.posts {
+          if post.len() < count_row {
+            if count_row == 0 {
+              count_row = post.len();
+            }
+            else if post.len() < count_row {
+              count_row = post.len();
+            }
+          }
+        }
+      }
+      let mut samples_truncated: Vec<Vec<String>>  = Vec::new();
+      for sample in &samples {
+        for post in &sample.posts {
+          let mut post_truncated: Vec<String> = Vec::new();
+          for i in 0..count_row {
+            post_truncated[i] = post[i].to_owned();
+          }
+          samples_truncated.push(post_truncated);
+        }
+      };
       let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
-      let samples_bytes = bincode::serialize(&samples).unwrap();
+      let samples_bytes = bincode::serialize(&samples_truncated).unwrap();
       f.and_then(|mut f| f.write_all(&samples_bytes)).expect("Failed to write samples");
       samples
     }
@@ -432,7 +441,7 @@ fn normalize(training_set: &Vec<Sample>, count_row: usize) -> (Vec<Vec<f64>>, Ve
     }
   
     // Create f64 matrices for y_set.
-    let y_matrix: Vec<u8> = y_set_matrix.iter().map(|x| *x).collect();
+    let y_matrix: Vec<u8> = y_set_matrix.iter().map(|y| *y).collect();
 
     let x_matrix_bytes = bincode::serialize(&x_matrix).expect("Can not serialize the matrix");
           File::create("x_matrix.bincode")
@@ -577,7 +586,7 @@ fn build_sets(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, leaf_a: u8, leaf_b: 
 
 fn main() -> Result<(), Error> {
   let training_set: Vec<Sample> = load_data();
-  let count_row = training_set[0].posts[0].len();
+  let count_row = training_set.get(0).unwrap().posts.get(0).unwrap().len();
   let (x_matrix, y_matrix) = normalize(&training_set, count_row);
   tally(&y_matrix);
   // Build sets for an ensemble of models
