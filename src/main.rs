@@ -311,15 +311,14 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     // tf-idf = tf * log(N / df)
     // Where N is number of documents and df is number of documents containing the term.
     let tf = |doc: DMatrixSlice<String>, term: &str| -> f64 {
-      let sum = DMatrix::from_fn(doc.nrows(), doc.ncols(), |i, j| {
+      DMatrix::from_fn(doc.nrows(), doc.ncols(), |i, j| {
         if doc[(i, j)] == term {
           1.0
         }
         else {
           0.0
         }
-      }).sum();
-      sum
+      }).sum()
     };
     let idf = |corpus: DMatrix<String>, term: &str| -> f64 {
       let frequency: f64 = DMatrix::from_fn(corpus.nrows(), 1, |i, j| {
@@ -333,8 +332,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
       }).sum();
       // Smooth inverse formula by adding 1.0 to denominator to prevent division by zero
       let inverse = (corpus.nrows() as f64) / frequency + 1.0 as f64;
-      let log_inverse = inverse.ln(); 
-      log_inverse
+      inverse.ln()
     };
 
     println!("Creating tf from corpus...");
