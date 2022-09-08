@@ -203,7 +203,7 @@ fn load_data() -> Vec<Sample> {
           let mut post_truncated: Vec<String> = Vec::new();
           if post.len() > 0 {
             for i in 0..count_row {
-              post_truncated[i] = post[i].to_owned();
+              post_truncated.push(post[i].to_owned());
             }
             truncated_sample.posts.push(post_truncated);
           }
