@@ -220,8 +220,8 @@ fn load_data() -> Vec<Sample> {
 }
 
 fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
-  let path_fx = Path::new("./x_matrix.bincode");
-  let path_fy = Path::new("./y_matrix.bincode");
+  let path_fx = Path::new("./corpus.bincode");
+  let path_fy = Path::new("./classifiers.bincode");
   if !path_fx.exists() || !path_fy.exists() {
     println!("Saving x and y matrices...");
     let mut x_set: Vec<Vec<String>> = Vec::new();
@@ -234,8 +234,8 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     println!("{} x samples", x_set.len());
     println!("{} y labels", y_set.len());
 
-    let x_matrix: DMatrix<String> = DMatrix::from_fn(x_set.len(), x_set[0].len(), |i, j| x_set[i][j].to_owned());
-    let y_matrix: DMatrix<u8> = DMatrix::from_fn(y_set.len(), 1, |i, _| y_set[i]);
+    let corpus: DMatrix<String> = DMatrix::from_fn(x_set.len(), x_set[0].len(), |i, j| x_set[i][j].to_owned());
+    let classifiers: DMatrix<u8> = DMatrix::from_fn(y_set.len(), 1, |i, _| y_set[i]);
    
     // Deterimine unique labels
     let mut unique_labels: Vec<String> = Vec::new();
@@ -305,7 +305,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     //   }
     // };
 
-    // Create TF*IDF x_matrix from x_set
+    // Create TF*IDF corpus from x_set
     // tf is the number of times a term appears in a document
     // idf is the inverse document frequency of a term e.g. N divided by how many posts contain the term
     // tf-idf = tf * log(N / df)
@@ -325,17 +325,17 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
       (corpus.len() as f64 / frequency + 1.0).ln() // Smooth idf by adding 1.0 to denominator to prevent division by zero
     };
 
-    println!("Creating tf from x_matrix...");
+    println!("Creating tf from corpus...");
     let mut start = Instant::now();
-    let tf_matrix: DMatrix<f64> = DMatrix::from_fn(x_matrix.nrows(), x_matrix.ncols(), |i, j| tf(x_matrix.slice((i, 0), (1, x_matrix.ncols())), &x_matrix[(i, j)]));
+    let tf_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| tf(corpus.slice((i, 0), (1, corpus.ncols())), &corpus[(i, j)]));
     println!("tf: {} minutes", start.elapsed().as_secs() / 60);
-    println!("Creating idf from x_matrix...");
+    println!("Creating idf from corpus...");
     start = Instant::now();
-    let idf_matrix: DMatrix<f64> = DMatrix::from_fn(x_matrix.nrows(), x_matrix.ncols(), |i, j| idf(x_matrix.clone(), &x_matrix[(i, j)]));
+    let idf_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| idf(corpus.clone(), &corpus[(i, j)]));
     println!("idf: {} minutes", start.elapsed().as_secs() / 60);
     print!("Creating tf-idf matrix...");
     start = Instant::now();
-    let tfidf: DMatrix<f64> = tf_matrix * idf_matrix;
+    let tf_idf: DMatrix<f64> = tf_matrix * idf_matrix;
     println!("tfidf: {} minutes", start.elapsed().as_secs() / 60);
 
     // let mut docs: Vec<Vec<(String, usize)>> = Vec::new();
@@ -427,90 +427,90 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     //   }
     // };
 
-    // let mut x_matrix: Vec<Vec<f64>> = Vec::new();
+    // let mut corpus: Vec<Vec<f64>> = Vec::new();
     // for (i, post) in x_set.iter().enumerate() {
     //   let mut row = Vec::new();
     //   for (j, t) in post.iter().enumerate() {
     //     let tf_idf: f64 = tf_matrix[i][j] * idf_map[t];
     //     row.push(tf_idf);
     //   }
-    //   x_matrix.push(row);
+    //   corpus.push(row);
     // }
   
-    println!("We obtain a {}x{} matrix of counts for the vocabulary entries", tfidf.len(), tfidf.row(0).len());
+    println!("We obtain a {}x{} matrix of counts for the vocabulary entries", tf_idf.len(), tf_idf.row(0).len());
 
     // Create f64 matrices from x_set.
-    // let mut x_matrix: Vec<Vec<f64>> = Vec::new();
+    // let mut corpus: Vec<Vec<f64>> = Vec::new();
     // for post in x_set {
     //   let mut matrix: Vec<f64> = Vec::new();
     //   for token in post {
     //     let index: f64 = dictionary.get_key_value(&token.to_string()).unwrap().1.clone();
     //     matrix.push(index);
     //   }
-    //   x_matrix.push(matrix);
+    //   corpus.push(matrix);
     // }
 
-    let mut x_matrix: Vec<Vec<f64>> = Vec::new();
+    let mut corpus: Vec<Vec<f64>> = Vec::new();
     // Convert tfidf to a Vec<Vec<f64>>.
-    for row in tfidf.row_iter() {
-      let mut matrix: Vec<f64> = Vec::new();
-      for val in &row {
-        matrix.push(*val);
+    for row in tf_idf.row_iter() {
+      let mut doc: Vec<f64> = Vec::new();
+      for term in &row {
+        doc.push(*term);
       }
-      x_matrix.push(matrix);
+      corpus.push(doc);
     }
   
     // Create f64 matrices for y_set.
-    let y_matrix: Vec<u8> = y_matrix.iter().map(|y| *y).collect();
+    let classifiers: Vec<u8> = classifiers.iter().map(|y| *y).collect();
 
-    let x_matrix_bytes = bincode::serialize(&x_matrix).expect("Can not serialize the matrix");
-          File::create("x_matrix.bincode")
-            .and_then(|mut f| f.write_all(&x_matrix_bytes))
-            .expect("Can not persist x_matrix");
-    let y_matrix_bytes: Vec<u8> = bincode::serialize(&y_matrix).expect("Can not serialize the matrix");
-          File::create("y_matrix.bincode")
-            .and_then(|mut f| f.write_all(&y_matrix_bytes))
-            .expect("Can not persist y_matrix");
-    (x_matrix, y_matrix)
+    let corpus_bytes = bincode::serialize(&corpus).expect("Can not serialize the matrix");
+          File::create("corpus.bincode")
+            .and_then(|mut f| f.write_all(&corpus_bytes))
+            .expect("Can not persist corpus");
+    let classifiers_bytes: Vec<u8> = bincode::serialize(&classifiers).expect("Can not serialize the matrix");
+          File::create("classifiers.bincode")
+            .and_then(|mut f| f.write_all(&classifiers_bytes))
+            .expect("Can not persist classifiers");
+    (corpus, classifiers)
   } 
   else {
     println!("Loading x and y matrices...");
     let mut x_buf = Vec::new();
     let mut y_buf = Vec::new();
-    std::fs::File::open("x_matrix.bincode").expect("Can not open x_matrix").read_to_end(&mut x_buf).unwrap();
-    std::fs::File::open("y_matrix.bincode").expect("Can not open y_matrix").read_to_end(&mut y_buf).unwrap();
-    let x_matrix: Vec<Vec<f64>> = bincode::deserialize(&x_buf).unwrap();
-    let y_matrix: Vec<u8> = bincode::deserialize(&y_buf).unwrap();
-    (x_matrix, y_matrix)
+    std::fs::File::open("corpus.bincode").expect("Can not open corpus").read_to_end(&mut x_buf).unwrap();
+    std::fs::File::open("classifiers.bincode").expect("Can not open classifiers").read_to_end(&mut y_buf).unwrap();
+    let corpus: Vec<Vec<f64>> = bincode::deserialize(&x_buf).unwrap();
+    let classifiers: Vec<u8> = bincode::deserialize(&y_buf).unwrap();
+    (corpus, classifiers)
   }
 }
 
-fn tally(y_matrix: &Vec<u8>) {
+fn tally(classifiers: &Vec<u8>) {
   println!("Tallying...");
-  println!("count ISTJ: {}", y_matrix.iter().filter(|&m| *m == indicator::ISTJ).count());
-  println!("count ISFJ: {}", y_matrix.iter().filter(|&m| *m == indicator::ISFJ).count());
-  println!("count INFJ: {}", y_matrix.iter().filter(|&m| *m == indicator::INFJ).count());
-  println!("count INTJ: {}", y_matrix.iter().filter(|&m| *m == indicator::INTJ).count());
-  println!("count ISTP: {}", y_matrix.iter().filter(|&m| *m == indicator::ISTP).count());
-  println!("count ISFP: {}", y_matrix.iter().filter(|&m| *m == indicator::ISFP).count());
-  println!("count INFP: {}", y_matrix.iter().filter(|&m| *m == indicator::INFP).count());
-  println!("count INTP: {}", y_matrix.iter().filter(|&m| *m == indicator::INTP).count());
-  println!("count ESTP: {}", y_matrix.iter().filter(|&m| *m == indicator::ESTP).count());
-  println!("count ESFP: {}", y_matrix.iter().filter(|&m| *m == indicator::ESFP).count());
-  println!("count ENFP: {}", y_matrix.iter().filter(|&m| *m == indicator::ENFP).count());
-  println!("count ENTP: {}", y_matrix.iter().filter(|&m| *m == indicator::ENTP).count());
-  println!("count ESTJ: {}", y_matrix.iter().filter(|&m| *m == indicator::ESTJ).count());
-  println!("count ESFJ: {}", y_matrix.iter().filter(|&m| *m == indicator::ESFJ).count());
-  println!("count ENFJ: {}", y_matrix.iter().filter(|&m| *m == indicator::ENFJ).count());
-  println!("count ENTJ: {}", y_matrix.iter().filter(|&m| *m == indicator::ENTJ).count());
+  println!("count ISTJ: {}", classifiers.iter().filter(|&m| *m == indicator::ISTJ).count());
+  println!("count ISFJ: {}", classifiers.iter().filter(|&m| *m == indicator::ISFJ).count());
+  println!("count INFJ: {}", classifiers.iter().filter(|&m| *m == indicator::INFJ).count());
+  println!("count INTJ: {}", classifiers.iter().filter(|&m| *m == indicator::INTJ).count());
+  println!("count ISTP: {}", classifiers.iter().filter(|&m| *m == indicator::ISTP).count());
+  println!("count ISFP: {}", classifiers.iter().filter(|&m| *m == indicator::ISFP).count());
+  println!("count INFP: {}", classifiers.iter().filter(|&m| *m == indicator::INFP).count());
+  println!("count INTP: {}", classifiers.iter().filter(|&m| *m == indicator::INTP).count());
+  println!("count ESTP: {}", classifiers.iter().filter(|&m| *m == indicator::ESTP).count());
+  println!("count ESFP: {}", classifiers.iter().filter(|&m| *m == indicator::ESFP).count());
+  println!("count ENFP: {}", classifiers.iter().filter(|&m| *m == indicator::ENFP).count());
+  println!("count ENTP: {}", classifiers.iter().filter(|&m| *m == indicator::ENTP).count());
+  println!("count ESTJ: {}", classifiers.iter().filter(|&m| *m == indicator::ESTJ).count());
+  println!("count ESFJ: {}", classifiers.iter().filter(|&m| *m == indicator::ESFJ).count());
+  println!("count ENFJ: {}", classifiers.iter().filter(|&m| *m == indicator::ENFJ).count());
+  println!("count ENTJ: {}", classifiers.iter().filter(|&m| *m == indicator::ENTJ).count());
 }
 
 
-fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, member_id: &str) {
+fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
   println!("Training...");
-  let x: DenseMatrix<f64> = DenseMatrix::from_2d_vec(&x_matrix);
+  let x: DenseMatrix<f64> = DenseMatrix::from_2d_vec(&corpus);
   // These are our target class labels
-  let y: Vec<f64> = y_matrix.into_iter().map(|x| *x as f64).collect();
+  let y: Vec<f64> = classifiers.into_iter().map(|x| *x as f64).collect();
   // Split bag into training/test (80%/20%)
   let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, true);
 
@@ -584,36 +584,36 @@ fn train(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, member_id: &str) {
   println!("MSE: {}", mean_squared_error(&y_test, &y_pred));
 }
 
-fn build_sets(x_matrix: &Vec<Vec<f64>>, y_matrix: &Vec<u8>, leaf_a: u8, leaf_b: u8) -> (Vec<Vec<f64>>, Vec<u8>) {
-  let mut x_matrix_set: Vec<Vec<f64>> = Vec::new();
-  let mut y_matrix_set: Vec<u8> = Vec::new();
-  for (i, y) in y_matrix.iter().enumerate() {
+fn build_sets(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, leaf_a: u8, leaf_b: u8) -> (Vec<Vec<f64>>, Vec<u8>) {
+  let mut corpus_set: Vec<Vec<f64>> = Vec::new();
+  let mut classifiers_set: Vec<u8> = Vec::new();
+  for (i, y) in classifiers.iter().enumerate() {
     let left = *y & leaf_a != 0u8;
     let right = *y & leaf_b != 0u8;
     if left {
-      x_matrix_set.push(x_matrix[i].clone());
-      y_matrix_set.push(0u8);
+      corpus_set.push(corpus[i].clone());
+      classifiers_set.push(0u8);
     } else if right {
-      x_matrix_set.push(x_matrix[i].clone());
-      y_matrix_set.push(1u8);
+      corpus_set.push(corpus[i].clone());
+      classifiers_set.push(1u8);
     }
     else {
       continue;
     }
   }
-  (x_matrix_set, y_matrix_set)
+  (corpus_set, classifiers_set)
 }
 
 fn main() -> Result<(), Error> {
   let training_set: Vec<Sample> = load_data();
-  let (x_matrix, y_matrix) = normalize(&training_set);
-  tally(&y_matrix);
+  let (corpus, classifiers) = normalize(&training_set);
+  tally(&classifiers);
   // Build sets for an ensemble of models
-  let (ie_x_matrix, ie_y_matrix) = build_sets(&x_matrix, &y_matrix, indicator::mb_flag::I, indicator::mb_flag::E);
-  let (ns_x_matrix, ns_y_matrix) = build_sets(&x_matrix, &y_matrix, indicator::mb_flag::N, indicator::mb_flag::S);
-  let (tf_x_matrix, tf_y_matrix) = build_sets(&x_matrix, &y_matrix, indicator::mb_flag::T, indicator::mb_flag::F);
-  let (jp_x_matrix, jp_y_matrix) = build_sets(&x_matrix, &y_matrix, indicator::mb_flag::J, indicator::mb_flag::P);
-  let ensemble = [(ie_x_matrix, ie_y_matrix), (ns_x_matrix, ns_y_matrix), (tf_x_matrix, tf_y_matrix), (jp_x_matrix, jp_y_matrix)];
+  let (ie_corpus, ie_classifiers) = build_sets(&corpus, &classifiers, indicator::mb_flag::I, indicator::mb_flag::E);
+  let (ns_corpus, ns_classifiers) = build_sets(&corpus, &classifiers, indicator::mb_flag::N, indicator::mb_flag::S);
+  let (tf_corpus, tf_classifiers) = build_sets(&corpus, &classifiers, indicator::mb_flag::T, indicator::mb_flag::F);
+  let (jp_corpus, jp_classifiers) = build_sets(&corpus, &classifiers, indicator::mb_flag::J, indicator::mb_flag::P);
+  let ensemble = [(ie_corpus, ie_classifiers), (ns_corpus, ns_classifiers), (tf_corpus, tf_classifiers), (jp_corpus, jp_classifiers)];
   // Train models
   let tree: [&str; 4] = ["IE", "NS", "TF", "JP"];
   for i in 0..4 {
@@ -624,7 +624,7 @@ fn main() -> Result<(), Error> {
 
   if !Path::new("./mbti_rf__ALL.model").exists() {
     println!("Generating generic model");
-    train(&x_matrix, &y_matrix, "ALL");
+    train(&corpus, &classifiers, "ALL");
   } else {
     println!("Generic model already exists");
     // TODO load model and test
@@ -651,9 +651,9 @@ fn main() -> Result<(), Error> {
     }
   }
 
-  let x: DenseMatrix<f64> = DenseMatrix::from_2d_vec(&x_matrix);
+  let x: DenseMatrix<f64> = DenseMatrix::from_2d_vec(&corpus);
   // These are our target class labels
-  let y: Vec<f64> = y_matrix.into_iter().map(|x| x as f64).collect();
+  let y: Vec<f64> = classifiers.into_iter().map(|x| x as f64).collect();
   // Split bag into training/test (80%/20%)
   let (_x_train, x_test, _y_train, y_test) = train_test_split(&x, &y, 0.2, true);
   let mut ensemble_pred: [Vec<f64>; 4] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
