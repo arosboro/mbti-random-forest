@@ -7,18 +7,15 @@ use serde::{
   Serialize, 
   Deserialize
 };
-use smartcore::svm::LinearKernel;
 use smartcore::tree::decision_tree_classifier::SplitCriterion;
 use std::collections::{HashMap, HashSet};
 // DenseMatrix wrapper around Vec
 use smartcore::linalg::naive::dense_matrix::*;
 // Random Forest
 use smartcore::ensemble::random_forest_classifier::{RandomForestClassifier, RandomForestClassifierParameters};
-use smartcore::svm::svc::{SVCParameters, SVC};
-use smartcore::metrics::roc_auc_score;
 // Model performance
 use smartcore::metrics::{mean_squared_error, accuracy};
-use smartcore::model_selection::train_test_split;
+use smartcore::model_selection::{train_test_split, KFold, cross_validate};
 use vtext::tokenize::*;
 use rust_stemmers::{Algorithm, Stemmer};
 use regex::Regex;
@@ -410,7 +407,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         let start = Instant::now();
         let tf_idf: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
           tf_matrix[i][j] * idf_matrix[i][j]
-        }).normalize();
+        });
         println!("tf_idf: {} seconds", start.elapsed().as_secs());
         // Convert tf_idf to a Vec<Vec<f64>>.
         let mut corpus_tf_idf: Vec<Vec<f64>> = Vec::new();
@@ -476,11 +473,23 @@ fn tally(classifiers: &Vec<u8>) {
 
 fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
   println!("Training...");
-  let x: DenseMatrix<f64> = DenseMatrix::from_2d_vec(&corpus);
+  let x: DenseMatrix<f64> = DenseMatrix::new(corpus.len(), corpus[0].len(), corpus.clone().into_iter().flatten().collect());
   // These are our target class labels
   let y: Vec<f64> = classifiers.into_iter().map(|x| *x as f64).collect();
   // Split bag into training/test (80%/20%)
-  let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, true);
+  // let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, true);
+
+  let rf_ml_wrapper = |x: &DenseMatrix<f64>, y: &Vec<f64>, parameters: RandomForestClassifierParameters| {
+    RandomForestClassifier::fit(x, y, parameters)
+      .and_then(|rf| {
+        println!("Serializing random forest...");
+        let bytes_rf = bincode::serialize(&rf).unwrap();
+        File::create(format!("mbti_rf__{}.model", member_id))
+          .and_then(|mut f| f.write_all(&bytes_rf))
+          .expect(format!("Can not persist random_forest {}", member_id).as_str());
+        Ok(rf)
+      })
+  };
 
   // Parameters
   const DEFAULT_PARAMS: RandomForestClassifierParameters = RandomForestClassifierParameters {
@@ -519,35 +528,37 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
   if member_id == "ALL" {
     println!("{:?}", DEFAULT_PARAMS);
     println!("{:?}", TWEAKED_PARAMS);
-    let y_hat_rf: Vec<f64> = RandomForestClassifier::fit(&x_train, &y_train, TWEAKED_PARAMS)
-      .and_then(|rf| {
-        println!("Serializing random forest...");
-        let bytes_rf = bincode::serialize(&rf).unwrap();
-        File::create(format!("mbti_rf__{}.model", member_id))
-          .and_then(|mut f| f.write_all(&bytes_rf))
-          .expect(format!("Can not persist random_forest {}", member_id).as_str());
-        rf.predict(&x_test)
-      })
-      .unwrap();
-    // Evaluate
-    println!("Random Forest accuracy: {}", accuracy(&y_test, &y_hat_rf));
-    println!("MSE: {}", mean_squared_error(&y_test, &y_hat_rf));
+    let results = cross_validate(
+      rf_ml_wrapper,
+      &x,
+      &y,
+      TWEAKED_PARAMS,
+      KFold::default().with_n_splits(3),
+      accuracy,
+    )
+    .unwrap();
+    println!(
+        "Test score: {}, training score: {}",
+        results.mean_test_score(),
+        results.mean_train_score()
+    );
   }
-  // SVM
+  // RF Ensemble
   else {
-    let y_hat_svm: Vec<f64> = SVC::fit(&x_train, &y_train, SVCParameters::default().with_c(10.0))
-      .and_then(|svm| {
-        let bytes_rf = bincode::serialize(&svm).unwrap();
-        File::create(format!("mbti_svm__{}.model", member_id))
-          .and_then(|mut f| f.write_all(&bytes_rf))
-          .expect(format!("Can not persist svm {}", member_id).as_str());
-        svm.predict(&x_test)
-      })
-      .unwrap();
-    // Evaluate  
-    println!("Random Forest accuracy: {}", accuracy(&y_test, &y_hat_svm));
-    println!("MSE: {}", mean_squared_error(&y_test, &y_hat_svm));
-    println!("AUC SVM: {}", roc_auc_score(&y_test, &y_hat_svm));
+    let results = cross_validate(
+      rf_ml_wrapper,
+      &x,
+      &y,
+      TWEAKED_PARAMS,
+      KFold::default().with_n_splits(3),
+      accuracy,
+    )
+    .unwrap();
+    println!(
+        "Test score: {}, training score: {}",
+        results.mean_test_score(),
+        results.mean_train_score()
+    );
   }
 }
 
@@ -610,24 +621,25 @@ fn main() -> Result<(), Error> {
     // println!("MSE: {}", mean_squared_error(&y_test, &y_hat_rf));
   }
 
-  let mut models: Vec<SVC<f64, DenseMatrix<f64>, LinearKernel>> = Vec::new();
+  let mut models: Vec<RandomForestClassifier<f64>> = Vec::new();
   for i in 0..4 {
-    let filename = format!("./mbti_svm__{}.model", tree[i]);
-    println!{"Training [IE, NS, TF, JP]: {}", tree[i]};
+    let filename = format!("./mbti_rf__{}.model", tree[i]);
+    
     let path_model = Path::new(&filename);
     if !path_model.exists() {
+      println!{"Training [IE, NS, TF, JP]: {}", tree[i]};
       train(&ensemble[i].0, &ensemble[i].1, tree[i]);
     }
     else {
       println!("Loading random forest {} model...", tree[i]);
-      let svm: SVC<f64, DenseMatrix<f64>, LinearKernel> = {
+      let rf: RandomForestClassifier<f64> = {
         let mut buf: Vec<u8> = Vec::new();
         File::open(path_model)
           .and_then(|mut f| f.read_to_end(&mut buf))
           .expect("Can not load model");
         bincode::deserialize(&buf).expect("Can not deserialize the model")
       };
-      models.push(svm);
+      models.push(rf);
     }
   }
 
@@ -674,7 +686,20 @@ fn main() -> Result<(), Error> {
   // Evaluate
   println!("Ensemble accuracy: {}", accuracy(&y_test, &y_pred));
   println!("MSE: {}", mean_squared_error(&y_test, &y_pred));
-  println!("AUC: {}", roc_auc_score(&y_test, &y_pred));
+  println!("Prediction, Actual, Variance, Correct");
+  let indicator_accuracy = |a: String, b: String | -> f64 {
+    let mut correct: f64 = 0f64;
+    for i in 0..a.len() {
+      if a.chars().nth(i).unwrap() == b.chars().nth(i).unwrap() {
+        correct += 1f64;
+      }
+    }
+    correct / a.len() as f64
+  };
+  for i in 0..25 {
+    let variance = indicator_accuracy(MBTI{indicator: y_pred[i] as u8}.to_string(), MBTI{indicator: y_test[i] as u8}.to_string());
+    println!("{}, {}, {}, {}", y_pred[i], y_test[i], variance, y_pred[i] == y_test[i]);
+  }
 
   Ok(()) 
 }
