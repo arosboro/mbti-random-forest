@@ -337,7 +337,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         let start = Instant::now();
         let tf_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
           tf(corpus.slice((i, 0), (1, corpus.ncols())), &corpus[(i, j)])
-        });
+        }).normalize();
         println!("tf_matrix: {} seconds", start.elapsed().as_secs());
         println!("We obtained a {}x{} matrix", tf_matrix.nrows(), tf_matrix.ncols());
         let mut corpus_tf: Vec<Vec<f64>> = Vec::new();
@@ -372,7 +372,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         let start = Instant::now();
         let idf_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
           idf(&corpus[(i, j)])
-        });
+        }).normalize();
         println!("idf_matrix: {} seconds", start.elapsed().as_secs());
         println!("We obtained a {}x{} matrix", idf_matrix.nrows(), idf_matrix.ncols());
         let mut corpus_idf: Vec<Vec<f64>> = Vec::new();
@@ -407,7 +407,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         let start = Instant::now();
         let tf_idf: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
           tf_matrix[i][j] * idf_matrix[i][j]
-        });
+        }).normalize();
         println!("tf_idf: {} seconds", start.elapsed().as_secs());
         // Convert tf_idf to a Vec<Vec<f64>>.
         let mut corpus_tf_idf: Vec<Vec<f64>> = Vec::new();
@@ -473,6 +473,7 @@ fn tally(classifiers: &Vec<u8>) {
 
 fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
   println!("Training...");
+
   let x: DenseMatrix<f64> = DenseMatrix::new(corpus.len(), corpus[0].len(), corpus.clone().into_iter().flatten().collect());
   // These are our target class labels
   let y: Vec<f64> = classifiers.into_iter().map(|x| *x as f64).collect();
@@ -482,11 +483,20 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
   let rf_ml_wrapper = |x: &DenseMatrix<f64>, y: &Vec<f64>, parameters: RandomForestClassifierParameters| {
     RandomForestClassifier::fit(x, y, parameters)
       .and_then(|rf| {
+        unsafe { 
+          static mut ITERATIONS: u32 = 0;
+          ITERATIONS += 1;
+          println!("Iteration: {}", ITERATIONS); 
+        }
         println!("Serializing random forest...");
         let bytes_rf = bincode::serialize(&rf).unwrap();
         File::create(format!("mbti_rf__{}.model", member_id))
           .and_then(|mut f| f.write_all(&bytes_rf))
           .expect(format!("Can not persist random_forest {}", member_id).as_str());
+        // Evaluate
+        let y_hat_rf: Vec<f64> = rf.predict(x).unwrap();
+        println!("Random forest accuracy: {}", accuracy(y, &y_hat_rf));
+        println!("MSE: {}", mean_squared_error(y, &y_hat_rf));
         Ok(rf)
       })
   };
@@ -511,15 +521,15 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
     /// Tree max depth. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
     max_depth: Some(8),
     /// The minimum number of samples required to be at a leaf node. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
-    min_samples_leaf: 128,
+    min_samples_leaf: 1,
     /// The minimum number of samples required to split an internal node. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
-    min_samples_split: 256,
+    min_samples_split: 2,
     /// The number of trees in the forest.
-    n_trees: 16,
+    n_trees: 100,
     /// Number of random sample of predictors to use as split candidates.
     m: Some(64),
     /// Whether to keep samples used for tree generation. This is required for OOB prediction.
-    keep_samples: true,
+    keep_samples: false,
     /// Seed used for bootstrap sampling and feature selection for each tree.
     seed: 42u64,
   };
@@ -606,20 +616,20 @@ fn main() -> Result<(), Error> {
     train(&corpus, &classifiers, "ALL");
   } else {
     println!("Generic models already exists");
-    // Load the Model
-    println!("Loading random forest...");
-    let _rf: RandomForestClassifier<f64> = {
-      let mut buf: Vec<u8> = Vec::new();
-      File::open(format!("mbti_rf__{}.model", "ALL"))
-        .and_then(|mut f| f.read_to_end(&mut buf))
-        .expect("Can not load model");
-      bincode::deserialize(&buf).expect("Can not deserialize the model")
-    };
     // Evaluate
     // let y_hat_rf: Vec<f64> = rf.predict(&x_test).unwrap();
     // println!("Random Forest accuracy: {}", accuracy(&y_test, &y_hat_rf));
     // println!("MSE: {}", mean_squared_error(&y_test, &y_hat_rf));
   }
+  // Load the rf Model
+  println!("Loading random forest...");
+  let rf: RandomForestClassifier<f64> = {
+    let mut buf: Vec<u8> = Vec::new();
+    File::open(format!("mbti_rf__{}.model", "ALL"))
+      .and_then(|mut f| f.read_to_end(&mut buf))
+      .expect("Can not load model");
+    bincode::deserialize(&buf).expect("Can not deserialize the model")
+  };
 
   let mut models: Vec<RandomForestClassifier<f64>> = Vec::new();
   for i in 0..4 {
@@ -684,24 +694,40 @@ fn main() -> Result<(), Error> {
     y_pred.push(mbti as f64);
   }
   // Evaluate
+  let sample_report = |y: &Vec<f64>, y_hat: &Vec<f64>| {
+    let indicator_accuracy = |a: &String, b: &String | -> f64 {
+      let mut correct: f64 = 0f64;
+      for i in 0..a.len() {
+        if a.chars().nth(i).unwrap() == b.chars().nth(i).unwrap() {
+          correct += 1f64;
+        }
+      }
+      correct / a.len() as f64
+    };
+    let variance = |y: &Vec<f64>, y_hat: &Vec<f64>| -> f64 {
+      let mut acc: Vec<f64> = Vec::new();
+      for i in 0..y_hat.len() {
+        let predicted: String = MBTI{indicator: y_hat[i] as u8}.to_string();
+        let actual: String = MBTI{indicator: y[i] as u8}.to_string();
+        let variance = indicator_accuracy(&predicted,&actual);
+        acc.push(variance);
+      }
+      DMatrix::from_vec(acc.len(), 1, acc).mean()
+    };
+    let mean_variance = variance(y_hat, y);
+    println!("Prediction, Actual, Variance, Mean Variance, Correct");
+    for i in 0..25 {
+      let predicted: String = MBTI{indicator: y_hat[i] as u8}.to_string();
+      let actual: String = MBTI{indicator: y[i] as u8}.to_string();
+      let variance = indicator_accuracy(&predicted,&actual);
+      println!("{},       {},   {:.2},     {:.2}           {}", predicted, actual, variance, mean_variance, y_hat[i] == y[i]);
+    }
+  };
+  println!("Generic Random Forest accuracy: {}", accuracy(&y_test, &rf.predict(&x_test).unwrap()));
+  sample_report(&y_test, &rf.predict(&x_test).unwrap());
   println!("Ensemble accuracy: {}", accuracy(&y_test, &y_pred));
   println!("MSE: {}", mean_squared_error(&y_test, &y_pred));
-  println!("Prediction, Actual, Variance, Correct");
-  let indicator_accuracy = |a: &String, b: &String | -> f64 {
-    let mut correct: f64 = 0f64;
-    for i in 0..a.len() {
-      if a.chars().nth(i).unwrap() == b.chars().nth(i).unwrap() {
-        correct += 1f64;
-      }
-    }
-    correct / a.len() as f64
-  };
-  for i in 0..25 {
-    let predicted: String = MBTI{indicator: y_pred[i] as u8}.to_string();
-    let actual: String = MBTI{indicator: y_test[i] as u8}.to_string();
-    let variance = indicator_accuracy(&predicted,&actual);
-    println!("{}, {}, {}, {}", predicted, actual, variance, y_pred[i] == y_test[i]);
-  }
+  sample_report( &y_test, &y_pred);
 
   Ok(()) 
 }
