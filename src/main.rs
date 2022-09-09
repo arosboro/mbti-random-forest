@@ -314,7 +314,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         else {
           0.0
         }
-      }).sum()
+      }).sum() / doc.ncols() as f64
     };
     let idf = |term: &String| -> f64 {
       // Smooth inverse formula by adding 1.0 to denominator to prevent division by zero
