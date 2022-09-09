@@ -687,7 +687,7 @@ fn main() -> Result<(), Error> {
   println!("Ensemble accuracy: {}", accuracy(&y_test, &y_pred));
   println!("MSE: {}", mean_squared_error(&y_test, &y_pred));
   println!("Prediction, Actual, Variance, Correct");
-  let indicator_accuracy = |a: String, b: String | -> f64 {
+  let indicator_accuracy = |a: &String, b: &String | -> f64 {
     let mut correct: f64 = 0f64;
     for i in 0..a.len() {
       if a.chars().nth(i).unwrap() == b.chars().nth(i).unwrap() {
@@ -697,8 +697,10 @@ fn main() -> Result<(), Error> {
     correct / a.len() as f64
   };
   for i in 0..25 {
-    let variance = indicator_accuracy(MBTI{indicator: y_pred[i] as u8}.to_string(), MBTI{indicator: y_test[i] as u8}.to_string());
-    println!("{}, {}, {}, {}", y_pred[i], y_test[i], variance, y_pred[i] == y_test[i]);
+    let predicted: String = MBTI{indicator: y_pred[i] as u8}.to_string();
+    let actual: String = MBTI{indicator: y_test[i] as u8}.to_string();
+    let variance = indicator_accuracy(&predicted,&actual);
+    println!("{}, {}, {}, {}", predicted, actual, variance, y_pred[i] == y_test[i]);
   }
 
   Ok(()) 
