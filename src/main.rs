@@ -677,28 +677,28 @@ fn main() -> Result<(), Error> {
   for i in 0..y_test.len(){
     let mut mbti: u8 = 0u8;
     for j in 0..4 {
-      if ensemble_pred[j][i] == 0f64 && tree[j].chars().nth(0).unwrap() == 'I' {
+      if ensemble_pred[j][i] == 0f64 && ["IE", "NS", "TF", "JP"][j].chars().nth(0).unwrap() == 'I' {
         mbti ^= indicator::mb_flag::I;
       }
-      else if ensemble_pred[j][i] == 1f64 && tree[j].chars().nth(1).unwrap() == 'E' {
+      else if ensemble_pred[j][i] == 1f64 && ["IE", "NS", "TF", "JP"][j].chars().nth(1).unwrap() == 'E' {
         mbti ^= indicator::mb_flag::E;
       }
-      else if ensemble_pred[j][i] == 0f64 && tree[j].chars().nth(0).unwrap() == 'N' {
+      else if ensemble_pred[j][i] == 0f64 && ["IE", "NS", "TF", "JP"][j].chars().nth(0).unwrap() == 'N' {
         mbti ^= indicator::mb_flag::N;
       }
-      else if ensemble_pred[j][i] == 1f64 && tree[j].chars().nth(1).unwrap() == 'S' {
+      else if ensemble_pred[j][i] == 1f64 && ["IE", "NS", "TF", "JP"][j].chars().nth(1).unwrap() == 'S' {
         mbti ^= indicator::mb_flag::S;
       }
-      else if ensemble_pred[j][i] == 0f64 && tree[j].chars().nth(0).unwrap() == 'T' {
+      else if ensemble_pred[j][i] == 0f64 && ["IE", "NS", "TF", "JP"][j].chars().nth(0).unwrap() == 'T' {
         mbti ^= indicator::mb_flag::T;
       }
-      else if ensemble_pred[j][i] == 1f64 && tree[j].chars().nth(1).unwrap() == 'F' {
+      else if ensemble_pred[j][i] == 1f64 && ["IE", "NS", "TF", "JP"][j].chars().nth(1).unwrap() == 'F' {
         mbti ^= indicator::mb_flag::F;
       }
-      else if ensemble_pred[j][i] == 0f64 && tree[j].chars().nth(0).unwrap() == 'J' {
+      else if ensemble_pred[j][i] == 0f64 && ["IE", "NS", "TF", "JP"][j].chars().nth(0).unwrap() == 'J' {
         mbti ^= indicator::mb_flag::J;
       }
-      else if ensemble_pred[j][i] == 1f64 && tree[j].chars().nth(1).unwrap() == 'P' {
+      else if ensemble_pred[j][i] == 1f64 && ["IE", "NS", "TF", "JP"][j].chars().nth(1).unwrap() == 'P' {
         mbti ^= indicator::mb_flag::P;
       }
     }
