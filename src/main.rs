@@ -337,7 +337,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         let start = Instant::now();
         let tf_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
           tf(corpus.slice((i, 0), (1, corpus.ncols())), &corpus[(i, j)])
-        }).normalize();
+        });
         println!("tf_matrix: {} seconds", start.elapsed().as_secs());
         println!("We obtained a {}x{} matrix", tf_matrix.nrows(), tf_matrix.ncols());
         let mut corpus_tf: Vec<Vec<f64>> = Vec::new();
@@ -372,7 +372,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         let start = Instant::now();
         let idf_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
           idf(&corpus[(i, j)])
-        }).normalize();
+        });
         println!("idf_matrix: {} seconds", start.elapsed().as_secs());
         println!("We obtained a {}x{} matrix", idf_matrix.nrows(), idf_matrix.ncols());
         let mut corpus_idf: Vec<Vec<f64>> = Vec::new();
@@ -407,14 +407,16 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         let start = Instant::now();
         let tf_idf: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
           tf_matrix[i][j] * idf_matrix[i][j]
-        }).normalize();
+        });
+        let max = tf_idf.max();
+        let tf_idf_normal: DMatrix<f64> = DMatrix::from_fn(tf_idf.nrows(), tf_idf.ncols(), |i, j| tf_idf[(i, j)] / max);
         println!("tf_idf: {} seconds", start.elapsed().as_secs());
         // Convert tf_idf to a Vec<Vec<f64>>.
         let mut corpus_tf_idf: Vec<Vec<f64>> = Vec::new();
-        for i in 0..tf_idf.nrows() {
+        for i in 0..tf_idf_normal.nrows() {
           let mut row: Vec<f64> = Vec::new();
-          for j in 0..tf_idf.ncols() {
-            row.push(tf_idf[(i, j)]);
+          for j in 0..tf_idf_normal.ncols() {
+            row.push(tf_idf_normal[(i, j)]);
           }
           corpus_tf_idf.push(row);
         }
