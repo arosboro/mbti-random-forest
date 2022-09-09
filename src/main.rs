@@ -408,15 +408,16 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         let tf_idf: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
           tf_matrix[i][j] * idf_matrix[i][j]
         });
-        let max = tf_idf.max();
-        let tf_idf_normal: DMatrix<f64> = DMatrix::from_fn(tf_idf.nrows(), tf_idf.ncols(), |i, j| tf_idf[(i, j)] / max);
+        // Normalizing makes the values too tiny.
+        // let max = tf_idf.max();
+        // let tf_idf_normal: DMatrix<f64> = DMatrix::from_fn(tf_idf.nrows(), tf_idf.ncols(), |i, j| tf_idf[(i, j)] / max);
         println!("tf_idf: {} seconds", start.elapsed().as_secs());
         // Convert tf_idf to a Vec<Vec<f64>>.
         let mut corpus_tf_idf: Vec<Vec<f64>> = Vec::new();
-        for i in 0..tf_idf_normal.nrows() {
+        for i in 0..tf_idf.nrows() {
           let mut row: Vec<f64> = Vec::new();
-          for j in 0..tf_idf_normal.ncols() {
-            row.push(tf_idf_normal[(i, j)]);
+          for j in 0..tf_idf.ncols() {
+            row.push(tf_idf[(i, j)]);
           }
           corpus_tf_idf.push(row);
         }
