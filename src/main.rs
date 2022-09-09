@@ -7,6 +7,7 @@ use serde::{
   Serialize, 
   Deserialize
 };
+use smartcore::svm::LinearKernel;
 use smartcore::tree::decision_tree_classifier::SplitCriterion;
 use std::collections::{HashMap, HashSet};
 // DenseMatrix wrapper around Vec
@@ -340,7 +341,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         let tf_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
           tf(corpus.slice((i, 0), (1, corpus.ncols())), &corpus[(i, j)])
         });
-        println!("tf_matrix: {} minutes", start.elapsed().as_secs() / 60);
+        println!("tf_matrix: {} seconds", start.elapsed().as_secs());
         println!("We obtained a {}x{} matrix", tf_matrix.nrows(), tf_matrix.ncols());
         let mut corpus_tf: Vec<Vec<f64>> = Vec::new();
         for i in 0..tf_matrix.nrows() {
@@ -375,7 +376,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         let idf_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
           idf(&corpus[(i, j)])
         });
-        println!("idf_matrix: {} minutes", start.elapsed().as_secs() / 60);
+        println!("idf_matrix: {} seconds", start.elapsed().as_secs());
         println!("We obtained a {}x{} matrix", idf_matrix.nrows(), idf_matrix.ncols());
         let mut corpus_idf: Vec<Vec<f64>> = Vec::new();
         // Convert idf to a Vec<Vec<f64>>.
@@ -410,7 +411,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         let tf_idf: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
           tf_matrix[i][j] * idf_matrix[i][j]
         }).normalize();
-        println!("tf_idf: {} minutes", start.elapsed().as_secs() / 60);
+        println!("tf_idf: {} seconds", start.elapsed().as_secs());
         // Convert tf_idf to a Vec<Vec<f64>>.
         let mut corpus_tf_idf: Vec<Vec<f64>> = Vec::new();
         for i in 0..tf_idf.nrows() {
@@ -534,7 +535,7 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
   }
   // SVM
   else {
-    let y_hat_svm: Vec<f64> = SVC::fit(&x_train, &y_train, SVCParameters::default().with_c(200.0))
+    let y_hat_svm: Vec<f64> = SVC::fit(&x_train, &y_train, SVCParameters::default().with_c(10.0))
       .and_then(|svm| {
         let bytes_rf = bincode::serialize(&svm).unwrap();
         File::create(format!("mbti_svm__{}.model", member_id))
@@ -548,27 +549,6 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
     println!("MSE: {}", mean_squared_error(&y_test, &y_hat_svm));
     println!("AUC SVM: {}", roc_auc_score(&y_test, &y_hat_svm));
   }
-  
-  // // Load the Model
-  // println!("Loading random forest...");
-  // let rf: RandomForestClassifier<f64> = {
-  //   let mut buf: Vec<u8> = Vec::new();
-  //   File::open(format!("mbti_rf__{}.model", member_id))
-  //     .and_then(|mut f| f.read_to_end(&mut buf))
-  //     .expect("Can not load model");
-  //   bincode::deserialize(&buf).expect("Can not deserialize the model")
-  // };
-  
-
-  // println!("Validation of serialized model...");
-  // let y_pred = rf.predict(&x_test).unwrap();
-  // // assert!(y_hat_rf == y_pred, "Inconsistent models.");
-
-  // // Calculate the accuracy
-  // println!("Metrics about model.");
-  // println!("Accuracy: {}", accuracy(&y_test, &y_pred));
-  // // Calculate test error
-  // println!("MSE: {}", mean_squared_error(&y_test, &y_pred));
 }
 
 fn build_sets(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, leaf_a: u8, leaf_b: u8) -> (Vec<Vec<f64>>, Vec<u8>) {
@@ -609,18 +589,30 @@ fn main() -> Result<(), Error> {
     println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 1u8).count(), tree[i].chars().nth(1).unwrap()};
   }
 
-  let model_rf_all_path = Path::new("mbti_rf_all.model");
+  let model_rf_all_path = Path::new("mbti_rf__ALL.model");
   if !model_rf_all_path.exists() {
     println!("Generating generic model");
     train(&corpus, &classifiers, "ALL");
   } else {
     println!("Generic models already exists");
-    // TODO load model and test
+    // Load the Model
+    println!("Loading random forest...");
+    let _rf: RandomForestClassifier<f64> = {
+      let mut buf: Vec<u8> = Vec::new();
+      File::open(format!("mbti_rf__{}.model", "ALL"))
+        .and_then(|mut f| f.read_to_end(&mut buf))
+        .expect("Can not load model");
+      bincode::deserialize(&buf).expect("Can not deserialize the model")
+    };
+    // Evaluate
+    // let y_hat_rf: Vec<f64> = rf.predict(&x_test).unwrap();
+    // println!("Random Forest accuracy: {}", accuracy(&y_test, &y_hat_rf));
+    // println!("MSE: {}", mean_squared_error(&y_test, &y_hat_rf));
   }
 
-  let mut models: Vec<RandomForestClassifier<f64>> = Vec::new();
+  let mut models: Vec<SVC<f64, DenseMatrix<f64>, LinearKernel>> = Vec::new();
   for i in 0..4 {
-    let filename = format!("./mbti_rf__{}.model", tree[i]);
+    let filename = format!("./mbti_svm__{}.model", tree[i]);
     println!{"Training [IE, NS, TF, JP]: {}", tree[i]};
     let path_model = Path::new(&filename);
     if !path_model.exists() {
@@ -628,14 +620,14 @@ fn main() -> Result<(), Error> {
     }
     else {
       println!("Loading random forest {} model...", tree[i]);
-      let rf: RandomForestClassifier<f64> = {
+      let svm: SVC<f64, DenseMatrix<f64>, LinearKernel> = {
         let mut buf: Vec<u8> = Vec::new();
         File::open(path_model)
           .and_then(|mut f| f.read_to_end(&mut buf))
           .expect("Can not load model");
         bincode::deserialize(&buf).expect("Can not deserialize the model")
       };
-      models.push(rf);
+      models.push(svm);
     }
   }
 
@@ -679,11 +671,10 @@ fn main() -> Result<(), Error> {
     }
     y_pred.push(mbti as f64);
   }
-  // Calculate the accuracy
-  println!("Metrics about model.");
-  println!("Accuracy: {}", accuracy(&y_test, &y_pred));
-  // Calculate test error
+  // Evaluate
+  println!("Ensemble accuracy: {}", accuracy(&y_test, &y_pred));
   println!("MSE: {}", mean_squared_error(&y_test, &y_pred));
+  println!("AUC: {}", roc_auc_score(&y_test, &y_pred));
 
   Ok(()) 
 }
