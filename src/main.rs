@@ -532,7 +532,7 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
     /// Number of random sample of predictors to use as split candidates.
     m: Some(64),
     /// Whether to keep samples used for tree generation. This is required for OOB prediction.
-    keep_samples: false,
+    keep_samples: true,
     /// Seed used for bootstrap sampling and feature selection for each tree.
     seed: 42u64,
   };
@@ -615,11 +615,10 @@ fn main() -> Result<(), Error> {
   let (jp_corpus, jp_classifiers) = build_sets(&corpus, &classifiers, indicator::mb_flag::J, indicator::mb_flag::P);
   let ensemble = [(ie_corpus, ie_classifiers), (ns_corpus, ns_classifiers), (tf_corpus, tf_classifiers), (jp_corpus, jp_classifiers)];
   // Train models
-  let tree: [&str; 4] = ["IE", "NS", "TF", "JP"];
   for i in 0..4 {
-    println!{"Tally of [IE, NS, TF, JP]: {}", tree[i]};
-    println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 0u8).count(), tree[i].chars().nth(0).unwrap()};
-    println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 1u8).count(), tree[i].chars().nth(1).unwrap()};
+    println!{"Tally of [IE, NS, TF, JP]: {}", ["IE", "NS", "TF", "JP"][i]};
+    println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 0u8).count(), ["IE", "NS", "TF", "JP"][i].chars().nth(0).unwrap()};
+    println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 1u8).count(), ["IE", "NS", "TF", "JP"][i].chars().nth(1).unwrap()};
   }
 
   let model_rf_all_path = Path::new("mbti_rf__ALL.model");
@@ -645,15 +644,15 @@ fn main() -> Result<(), Error> {
 
   let mut models: Vec<RandomForestClassifier<f64>> = Vec::new();
   for i in 0..4 {
-    let filename = format!("./mbti_rf__{}.model", tree[i]);
+    let filename = format!("./mbti_rf__{}.model", ["IE", "NS", "TF", "JP"][i]);
     
     let path_model = Path::new(&filename);
     if !path_model.exists() {
-      println!{"Training [IE, NS, TF, JP]: {}", tree[i]};
-      train(&ensemble[i].0, &ensemble[i].1, tree[i]);
+      println!{"Training [IE, NS, TF, JP]: {}", ["IE", "NS", "TF", "JP"][i]};
+      train(&ensemble[i].0, &ensemble[i].1, ["IE", "NS", "TF", "JP"][i]);
     }
     else {
-      println!("Loading random forest {} model...", tree[i]);
+      println!("Loading random forest {} model...", ["IE", "NS", "TF", "JP"][i]);
       let rf: RandomForestClassifier<f64> = {
         let mut buf: Vec<u8> = Vec::new();
         File::open(path_model)
