@@ -2,16 +2,60 @@
 
 ## With Term Frequency-Inverse Document Frequency Index trial 3
 Calculate Vec<Vec<64>> TF-IDF dense matrix for x_train,y_train.  Use SVC model for Generic algorithm.
-Saving samples...
+Loading samples...
 Saving x and y matrices...
 106067 x samples
 106067 y labels
 16 unique labels
-Saving dictionary...
+Loading dictionary...
+Loading df_index...
 Dictionary size: 183130
-Creating tf from corpus...
-tf: 71 minutes
-Creating idf from corpus...
+Loading tf_matrix...
+Loading idf_matrix...
+Creating the tf-idf matrix by multiplying...
+tf_idf: 0 minutes
+Saving tf_idf...
+Tallying...
+count ISTJ: 1243
+count ISFJ: 650
+count INFJ: 14963
+count INTJ: 22427
+count ISTP: 3424
+count ISFP: 875
+count INFP: 12134
+count INTP: 24961
+count ESTP: 1986
+count ESFP: 360
+count ENFP: 6167
+count ENTP: 11725
+count ESTJ: 482
+count ESFJ: 181
+count ENFJ: 1534
+count ENTJ: 2955
+Tally of [IE, NS, TF, JP]: IE
+80677 samples for I
+25390 samples for E
+Tally of [IE, NS, TF, JP]: NS
+96866 samples for N
+9201 samples for S
+Tally of [IE, NS, TF, JP]: TF
+69203 samples for T
+36864 samples for F
+Tally of [IE, NS, TF, JP]: JP
+44435 samples for J
+61632 samples for P
+Generating generic model
+Training [IE, NS, TF, JP]: IE
+Loading random forest IE model...
+Training [IE, NS, TF, JP]: NS
+Loading random forest NS model...
+Training [IE, NS, TF, JP]: TF
+Loading random forest TF model...
+Training [IE, NS, TF, JP]: JP
+Loading random forest JP model...
+Metrics about model.
+Accuracy: 0.23226323480884364
+MSE: 980.2766228256259
 
 ## Bigger Better Data Set trial 2
 Removed stopwords, underfitting generic model, but ensemble of 4 classifier models is more accurate than trial 1

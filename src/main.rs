@@ -13,6 +13,8 @@ use std::collections::{HashMap, HashSet};
 use smartcore::linalg::naive::dense_matrix::*;
 // Random Forest
 use smartcore::ensemble::random_forest_classifier::{RandomForestClassifier, RandomForestClassifierParameters};
+use smartcore::svm::svc::{SVCParameters, SVC};
+use smartcore::metrics::roc_auc_score;
 // Model performance
 use smartcore::metrics::{mean_squared_error, accuracy};
 use smartcore::model_selection::train_test_split;
@@ -339,7 +341,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
           tf(corpus.slice((i, 0), (1, corpus.ncols())), &corpus[(i, j)])
         });
         println!("tf_matrix: {} minutes", start.elapsed().as_secs() / 60);
-        println!("We obtained a {} x {} matrix", tf_matrix.nrows(), tf_matrix.ncols());
+        println!("We obtained a {}x{} matrix", tf_matrix.nrows(), tf_matrix.ncols());
         let mut corpus_tf: Vec<Vec<f64>> = Vec::new();
         for i in 0..tf_matrix.nrows() {
           let mut row: Vec<f64> = Vec::new();
@@ -405,13 +407,9 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
       } else {
         println!("Creating the tf-idf matrix by multiplying...");
         let start = Instant::now();
-        let tf_matrix_dm: DMatrix<f64> = DMatrix::from_fn(tf_matrix.len(), tf_matrix[0].len(), |i, j| -> f64 {
-          tf_matrix[i][j]
-        });
-        let idf_matrix_dm: DMatrix<f64> = DMatrix::from_fn(idf_matrix.len(), idf_matrix[0].len(), |i, j| -> f64 {
-          idf_matrix[i][j]
-        });
-        let tf_idf: DMatrix<f64> = (tf_matrix_dm * idf_matrix_dm).normalize();
+        let tf_idf: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
+          tf_matrix[i][j] * idf_matrix[i][j]
+        }).normalize();
         println!("tf_idf: {} minutes", start.elapsed().as_secs() / 60);
         // Convert tf_idf to a Vec<Vec<f64>>.
         let mut corpus_tf_idf: Vec<Vec<f64>> = Vec::new();
@@ -519,17 +517,33 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
   println!("{:?}", TWEAKED_PARAMS);
 
   // Random Forest
-  for (iteration, rf) in RandomForestClassifier::fit(&x_train, &y_train, TWEAKED_PARAMS).iter().enumerate() {
-    println!("Serializing random forest...");
-    let bytes_rf = bincode::serialize(&rf).unwrap();
-    File::create(format!("mbti_rf__{}.model", member_id))
-      .and_then(|mut f| f.write_all(&bytes_rf))
-      .expect(format!("Can not persist random_forest {}", member_id).as_str());
-    let y_pred: Vec<f64> = rf.predict(&x_test).unwrap();
-    println!("Iteration: {}", iteration);
-    println!("Random Forest accuracy: {}", accuracy(&y_test, &y_pred));
-    println!("MSE: {}", mean_squared_error(&y_test, &y_pred));
-  }
+  let y_hat_rf: Vec<f64> = RandomForestClassifier::fit(&x_train, &y_train, TWEAKED_PARAMS)
+    .and_then(|rf| {
+      println!("Serializing random forest...");
+      let bytes_rf = bincode::serialize(&rf).unwrap();
+      File::create(format!("mbti_rf__{}.model", member_id))
+        .and_then(|mut f| f.write_all(&bytes_rf))
+        .expect(format!("Can not persist random_forest {}", member_id).as_str());
+      rf.predict(&x_test)
+    })
+    .unwrap();
+  println!("Random Forest accuracy: {}", accuracy(&y_test, &y_hat_rf));
+  println!("MSE: {}", mean_squared_error(&y_test, &y_hat_rf));
+
+  // SVM
+  let y_hat_svm: Vec<f64> = SVC::fit(&x_train, &y_train, SVCParameters::default().with_c(200.0))
+    .and_then(|svm| {
+      let bytes_rf = bincode::serialize(&svm).unwrap();
+      File::create(format!("mbti_svm__{}.model", member_id))
+        .and_then(|mut f| f.write_all(&bytes_rf))
+        .expect(format!("Can not persist svm {}", member_id).as_str());
+      svm.predict(&x_test)
+    })
+    .unwrap();
+  // Calculate test error    
+  println!("Random Forest accuracy: {}", accuracy(&y_test, &y_hat_rf));
+  println!("MSE: {}", mean_squared_error(&y_test, &y_hat_rf));
+  println!("AUC SVM: {}", roc_auc_score(&y_test, &y_hat_svm));
   
   // Load the Model
   println!("Loading random forest...");
@@ -591,11 +605,13 @@ fn main() -> Result<(), Error> {
     println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 1u8).count(), tree[i].chars().nth(1).unwrap()};
   }
 
-  if !Path::new("./mbti_rf__ALL.model").exists() {
+  let model_rf_all_path = Path::new("mbti_rf_all.model");
+  let model_svm_all_path = Path::new("mbti_svm_all.model");
+  if !model_rf_all_path.exists() || !model_svm_all_path.exists() {
     println!("Generating generic model");
     train(&corpus, &classifiers, "ALL");
   } else {
-    println!("Generic model already exists");
+    println!("Generic models already exists");
     // TODO load model and test
   }
 
