@@ -299,33 +299,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
 
     println!("Dictionary size: {}", dictionary.len());
 
-    // let tf_matrix = {
-    //   let path: &Path = Path::new("./tf_matrix.bincode");
-    //   if path.exists() {
-    //     println!("Loading tf_matrix...");
-    //     let mut buf = Vec::new();
-    //     File::open(path).unwrap()
-    //       .read_to_end(&mut buf).expect("Unable to read file");
-    //     let tf_matrix: Vec<Vec<f64>> = bincode::deserialize(&buf).unwrap();
-    //     tf_matrix
-    //   }
-    //   else {
-    //     println!("Saving tf_matrix...");
-    //     let mut tf_matrix: Vec<Vec<f64>> = Vec::new();
-    //     for post in x_set.clone() {
-    //       let mut tf_row: Vec<f64> = Vec::new();
-    //       for token in post.clone() {
-    //         let freq: f64 = tf(&post, &token);
-    //         tf_row.push(freq);
-    //       }
-    //       tf_matrix.push(tf_row);
-    //     }
-    //     let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
-    //     let tf_matrix_bytes = bincode::serialize(&tf_matrix).unwrap();
-    //     f.and_then(|mut f| f.write_all(&tf_matrix_bytes)).expect("Failed to write tf_matrix");
-    //     tf_matrix
-    //   }
-    // };
+    // Create a tf_idf matrix.
 
     // Closures to Create TF*IDF matrices from a corpus.
     // tf is the number of times a term appears in a document
@@ -347,246 +321,119 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
       (corpus.nrows() as f64 / (df_index[term] + 1.0)).ln() as f64
     };
 
-    // // Create a dense matrix of token identifiers.
-    // let dict_matrix: DMatrix<f64> = {
-    //   // let path = Path::new("./dict_matrix.bincode");
-    //   // if path.exists() {
-    //   //   println!("Loading dict_matrix...");
-    //   //   let mut buf = Vec::new();
-    //   //   File::open(path).unwrap()
-    //   //     .read_to_end(&mut buf).expect("Unable to read file");
-    //   //   let dict_matrix: DMatrix<f64> = bincode::deserialize(&buf).unwrap();
-    //   //   dict_matrix
-    //   // }
-    //   // else {
-    //     println!("Creating a dense matrix of token identifiers...");
-    //     let start = Instant::now();
-    //     let dict_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| dictionary.get_key_value(&corpus[(i,j)]).unwrap().1.clone());
-    //     println!("dict_matrix: {} minutes", start.elapsed().as_secs() / 60);
-    //     // println!("Saving dict_matrix...");
-    //     // let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
-    //     // let dict_matrix_bytes = bincode::serialize(&dict_matrix).unwrap();
-    //     // f.and_then(|mut f| f.write_all(&dict_matrix_bytes)).expect("Failed to write dict_matrix");
-    //     dict_matrix
-    //   // }
-    // };
-
     // Create a dense matrix of term frequencies.
-    let tf_matrix: DMatrix<f64> = {
-      // let path = Path::new("./tf_matrix.bincode");
-      // if path.exists() {
-      //   println!("Loading tf_matrix...");
-      //   let mut buf = Vec::new();
-      //   File::open(path).unwrap()
-      //     .read_to_end(&mut buf).expect("Unable to read file");
-      //   let tf_matrix: DMatrix<f64> = bincode::deserialize(&buf).unwrap();
-      //   tf_matrix
-      // }
-      // else {
+    let tf_matrix: Vec<Vec<f64>> = {
+      let path = Path::new("./tf_matrix.bincode");
+      if path.exists() {
+        println!("Loading tf_matrix...");
+        let mut buf = Vec::new();
+        File::open(path).unwrap()
+          .read_to_end(&mut buf).expect("Unable to read file");
+        let tf_matrix: Vec<Vec<f64>> = bincode::deserialize(&buf).unwrap();
+        tf_matrix
+      }
+      else {
         println!("Creating a dense matrix of term frequencies...");
         let start = Instant::now();
         let tf_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
           tf(corpus.slice((i, 0), (1, corpus.ncols())), &corpus[(i, j)])
         });
         println!("tf_matrix: {} minutes", start.elapsed().as_secs() / 60);
-        // println!("Saving tf_matrix...");
-        // let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
-        // let tf_matrix_bytes = bincode::serialize(&tf_matrix).unwrap();
-        // f.and_then(|mut f| f.write_all(&tf_matrix_bytes)).expect("Failed to write tf_matrix");
-        tf_matrix
-      // }
+        println!("We obtained a {} x {} matrix", tf_matrix.nrows(), tf_matrix.ncols());
+        let mut corpus_tf: Vec<Vec<f64>> = Vec::new();
+        for i in 0..tf_matrix.nrows() {
+          let mut row: Vec<f64> = Vec::new();
+          for j in 0..tf_matrix.ncols() {
+            row.push(tf_matrix[(i, j)]);
+          }
+          corpus_tf.push(row);
+        }
+        println!("Saving tf_matrix...");
+        let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
+        let tf_matrix_bytes = bincode::serialize(&corpus_tf).unwrap();
+        f.and_then(|mut f| f.write_all(&tf_matrix_bytes)).expect("Failed to write tf_matrix");
+        corpus_tf
+      }
     };
     
 
     // Create a dense matrix of idf values.
-    let idf_matrix: DMatrix<f64> = {
-      // let path = Path::new("./idf_matrix.bincode");
-      // if path.exists() {
-      //   println!("Loading idf_matrix...");
-      //   let mut buf = Vec::new();
-      //   File::open(path).unwrap()
-      //     .read_to_end(&mut buf).expect("Unable to read file");
-      //   let idf_matrix: DMatrix<f64> = bincode::deserialize(&buf).unwrap();
-      //   idf_matrix
-      // }
-      // else {
+    let idf_matrix: Vec<Vec<f64>> = {
+      let path = Path::new("./idf_matrix.bincode");
+      if path.exists() {
+        println!("Loading idf_matrix...");
+        let mut buf = Vec::new();
+        File::open(path).unwrap()
+          .read_to_end(&mut buf).expect("Unable to read file");
+        let idf_matrix: Vec<Vec<f64>> = bincode::deserialize(&buf).unwrap();
+        idf_matrix
+      } else {
         println!("Creating a dense matrix of idf values...");
         let start = Instant::now();
         let idf_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
           idf(&corpus[(i, j)])
         });
         println!("idf_matrix: {} minutes", start.elapsed().as_secs() / 60);
-        // println!("Saving idf_matrix...");
-        // let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
-        // let idf_matrix_bytes = bincode::serialize(&idf_matrix).unwrap();
-        // f.and_then(|mut f| f.write_all(&idf_matrix_bytes)).expect("Failed to write idf_matrix");
-        idf_matrix
-      // }
+        println!("We obtained a {}x{} matrix", idf_matrix.nrows(), idf_matrix.ncols());
+        let mut corpus_idf: Vec<Vec<f64>> = Vec::new();
+        // Convert idf to a Vec<Vec<f64>>.
+        for i in 0..idf_matrix.nrows() {
+          let mut row: Vec<f64> = Vec::new();
+          for j in 0..idf_matrix.ncols() {
+            row.push(idf_matrix[(i, j)]);
+          }
+          corpus_idf.push(row);
+        }
+        println!("Saving idf_matrix...");
+        let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
+        let idf_matrix_bytes = bincode::serialize(&corpus_idf).unwrap();
+        f.and_then(|mut f| f.write_all(&idf_matrix_bytes)).expect("Failed to write idf_matrix");
+        corpus_idf
+      }
     };
 
     // Finally, create the tf-idf matrix by multiplying.
-    let tf_idf: DMatrix<f64> = {
-      // let path = Path::new("./tf_idf.bincode");
-      // if (path.exists()) {
-      //   println!("Loading tf_idf...");
-      //   let mut buf = Vec::new();
-      //   File::open(path).unwrap()
-      //     .read_to_end(&mut buf).expect("Unable to read file");
-      //   let tf_idf: DMatrix<f64> = bincode::deserialize(&buf).unwrap();
-      //   tf_idf
-      // }
-      // else {
+    let tf_idf: Vec<Vec<f64>> = {
+      let path = Path::new("./tf_idf.bincode");
+      if path.exists() {
+        println!("Loading tf_idf...");
+        let mut buf = Vec::new();
+        File::open(path).unwrap()
+          .read_to_end(&mut buf).expect("Unable to read file");
+        let tf_idf: Vec<Vec<f64>> = bincode::deserialize(&buf).unwrap();
+        tf_idf
+      } else {
         println!("Creating the tf-idf matrix by multiplying...");
         let start = Instant::now();
-        let tf_idf: DMatrix<f64> = tf_matrix.clone() * idf_matrix.clone();
+        let tf_matrix_dm: DMatrix<f64> = DMatrix::from_fn(tf_matrix.len(), tf_matrix[0].len(), |i, j| -> f64 {
+          tf_matrix[i][j]
+        });
+        let idf_matrix_dm: DMatrix<f64> = DMatrix::from_fn(idf_matrix.len(), idf_matrix[0].len(), |i, j| -> f64 {
+          idf_matrix[i][j]
+        });
+        let tf_idf: DMatrix<f64> = (tf_matrix_dm * idf_matrix_dm).normalize();
         println!("tf_idf: {} minutes", start.elapsed().as_secs() / 60);
-        // println!("Saving tf_idf...");
-        // let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
-        // let tf_idf_bytes = bincode::serialize(&tf_idf).unwrap();
-        // f.and_then(|mut f| f.write_all(&tf_idf_bytes)).expect("Failed to write tf_idf");
-        tf_idf.normalize()
-      // }
+        // Convert tf_idf to a Vec<Vec<f64>>.
+        let mut corpus_tf_idf: Vec<Vec<f64>> = Vec::new();
+        for i in 0..tf_idf.nrows() {
+          let mut row: Vec<f64> = Vec::new();
+          for j in 0..tf_idf.ncols() {
+            row.push(tf_idf[(i, j)]);
+          }
+          corpus_tf_idf.push(row);
+        }
+        println!("Saving tf_idf...");
+        let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
+        let tf_idf_bytes = bincode::serialize(&corpus_tf_idf).unwrap();
+        f.and_then(|mut f| f.write_all(&tf_idf_bytes)).expect("Failed to write tf_idf");
+        corpus_tf_idf
+      }
     };
 
-    // println!("Creating tf from corpus...");
-    // let mut start = Instant::now();
-    // let tf_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| tf(corpus.slice((i, 0), (1, corpus.ncols())), &corpus[(i, j)]));
-    // println!("tf: {} minutes", start.elapsed().as_secs() / 60);
-    // println!("Creating idf from corpus...");
-    // start = Instant::now();
-    // let idf_matrix: DMatrix<f64> = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| idf(corpus.clone(), &corpus[(i, j)]));
-    // println!("idf: {} minutes", start.elapsed().as_secs() / 60);
-    // print!("Creating tf-idf matrix...");
-    // start = Instant::now();
-    // let tf_idf: DMatrix<f64> = tf_matrix * idf_matrix;
-    // println!("tfidf: {} minutes", start.elapsed().as_secs() / 60);
-
-    // let mut docs: Vec<Vec<(String, usize)>> = Vec::new();
-    // for (i, row) in x_set.iter().enumerate() {
-    //   let mut doc: Vec<(String, usize)> = Vec::new();
-    //   for (j, col) in row.iter().enumerate() {
-    //     doc.push((col.to_string(), tf_matrix[i][j] as usize));
-    //   }
-    //   docs.push(doc);
-    // }
-
-    // TODO - it is way to slow to calculate idf for each token in the dictionary
-    // let tf_idf_matrix: Vec<Vec<f64>> = {
-    //   let path: &Path = Path::new("./tf_idf_matrix.bincode");
-    //   if path.exists() {
-    //     println!("Loading tf_idf_matrix...");
-    //     let mut buf = Vec::new();
-    //     File::open(path).unwrap()
-    //       .read_to_end(&mut buf).expect("Unable to read file");
-    //     let tf_idf_matrix: Vec<Vec<f64>> = bincode::deserialize(&buf).unwrap();
-    //     tf_idf_matrix
-    //   }
-    //   else {
-    //     println!("Saving idf_map...\n");
-    //     let start: Instant = Instant::now();
-    //     let mut average_sequence_runtime: f64 = 0.0;
-    //     let mut tf_idf_matrix: Vec<Vec<f64>> = Vec::new();
-    //     for (i, doc) in docs.iter().enumerate() {
-    //       let sequence_start: Instant = Instant::now();
-    //       let mut average_token_runtime: f64 = 0.0;
-    //       let mut tf_idf_row: Vec<f64> = Vec::new();
-    //       for (j, (token, _)) in doc.iter().enumerate() {
-    //         let token_start = Instant::now();
-    //         let tf_idf: f64 = TfIdfDefault::tfidf(token, &docs[i], docs.iter());
-    //         tf_idf_row.push(tf_idf);
-    //         let token_runtime = token_start.elapsed().as_secs() as f64;
-    //         average_token_runtime += (token_runtime - average_token_runtime) / (j as f64 + 1.0);
-    //         if j % 50 == 0 {
-    //           println!("{}: {} / {} tokens, {} seconds per token", i, j, doc.len(), average_token_runtime);
-    //         }
-    //       }
-    //       tf_idf_matrix.push(tf_idf_row);
-    //       let sequence_runtime = sequence_start.elapsed().as_secs() as f64;
-    //       average_sequence_runtime += (sequence_runtime - average_sequence_runtime) / (i as f64 + 1.0);
-    //       let estimated_hours = ((x_set.len() - i) as f64 * average_sequence_runtime) / 3600.0;
-    //       println!("{} of {} sequences complete. Estimated time remaining: {} hours", i, x_set.len(), estimated_hours);
-    //     }
-    //     let runtime = start.elapsed().as_secs();
-    //     println!("idf_map created in {} hours", runtime / 3600);
-    //     let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
-    //     let tf_idf_matrix_bytes = bincode::serialize(&tf_idf_matrix).unwrap();
-    //     f.and_then(|mut f| f.write_all(&tf_idf_matrix_bytes)).expect("Failed to write idf_map");
-    //     tf_idf_matrix
-    //   }
-    // };
-
-    // let idf_map: HashMap<String, f64> = {
-    //   let path: &Path = Path::new("./idf_map.bincode");
-    //   if path.exists() {
-    //     println!("Loading idf_map...");
-    //     let mut buf = Vec::new();
-    //     File::open(path).unwrap()
-    //       .read_to_end(&mut buf).expect("Unable to read file");
-    //     let idf_map: HashMap<String, f64> = bincode::deserialize(&buf).unwrap();
-    //     idf_map
-    //   }
-    //   else {
-    //     println!("Saving idf_map...\n");
-    //     let start: Instant = Instant::now();
-    //     let mut average_sequence_runtime: f64 = 0.0;
-    //     let mut idf_map: HashMap<String, f64> = HashMap::new();
-    //     for (i, token) in dictionary.keys().enumerate() {
-    //       let sequence_start: Instant = Instant::now();
-    //       let idf_val: f64 = idf(&x_set, &token);
-    //       idf_map.insert(token.to_string(), idf_val);
-    //       let sequence_runtime = sequence_start.elapsed().as_secs();
-    //       average_sequence_runtime += (sequence_runtime as f64 - average_sequence_runtime) / (i as f64 + 1.0);
-    //       let estimated_minutes = ((dictionary.len() - i) as f64 * average_sequence_runtime as f64) / 3600.0;
-    //       if start.elapsed().as_secs() % 60 == 0 {
-    //         println!("{} of {} idf_map entries created on avg in {} sec.  {} hours remaining", i, dictionary.len(), average_sequence_runtime, estimated_minutes);
-    //       }
-    //     }
-    //     let runtime = start.elapsed().as_secs();
-    //     println!("idf_map created in {} hours", runtime / 3600);
-    //     let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
-    //     let idf_map_bytes = bincode::serialize(&idf_map).unwrap();
-    //     f.and_then(|mut f| f.write_all(&idf_map_bytes)).expect("Failed to write idf_map");
-    //     idf_map
-    //   }
-    // };
-
-    // let mut corpus: Vec<Vec<f64>> = Vec::new();
-    // for (i, post) in x_set.iter().enumerate() {
-    //   let mut row = Vec::new();
-    //   for (j, t) in post.iter().enumerate() {
-    //     let tf_idf: f64 = tf_matrix[i][j] * idf_map[t];
-    //     row.push(tf_idf);
-    //   }
-    //   corpus.push(row);
-    // }
-  
-    println!("We obtain a {}x{} matrix of counts for the vocabulary entries", tf_idf.nrows(), tf_idf.ncols());
-
-    // Create f64 matrices from x_set.
-    // let mut corpus: Vec<Vec<f64>> = Vec::new();
-    // for post in x_set {
-    //   let mut matrix: Vec<f64> = Vec::new();
-    //   for token in post {
-    //     let index: f64 = dictionary.get_key_value(&token.to_string()).unwrap().1.clone();
-    //     matrix.push(index);
-    //   }
-    //   corpus.push(matrix);
-    // }
-
-    let mut corpus: Vec<Vec<f64>> = Vec::new();
-    // Convert tfidf to a Vec<Vec<f64>>.
-    for row in tf_idf.row_iter() {
-      let mut doc: Vec<f64> = Vec::new();
-      for term in &row {
-        doc.push(*term);
-      }
-      corpus.push(doc);
-    }
-  
     // Create f64 matrices for y_set.
     let classifiers: Vec<u8> = classifiers.iter().map(|y| *y).collect();
 
-    let corpus_bytes = bincode::serialize(&corpus).expect("Can not serialize the matrix");
+    let corpus_bytes = bincode::serialize(&tf_idf).expect("Can not serialize the matrix");
           File::create("corpus.bincode")
             .and_then(|mut f| f.write_all(&corpus_bytes))
             .expect("Can not persist corpus");
@@ -594,7 +441,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
           File::create("classifiers.bincode")
             .and_then(|mut f| f.write_all(&classifiers_bytes))
             .expect("Can not persist classifiers");
-    (corpus, classifiers)
+    (tf_idf, classifiers)
   } else {
     println!("Loading x and y matrices...");
     let mut x_buf = Vec::new();
