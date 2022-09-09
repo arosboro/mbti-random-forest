@@ -493,7 +493,7 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
     seed: 0,
   };
 
-  println!("{:?}", DEFAULT_PARAMS);
+  
 
   const TWEAKED_PARAMS: RandomForestClassifierParameters = RandomForestClassifierParameters {
     /// Split criteria to use when building a tree. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
@@ -514,57 +514,61 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
     seed: 42u64,
   };
 
-  println!("{:?}", TWEAKED_PARAMS);
-
   // Random Forest
-  let y_hat_rf: Vec<f64> = RandomForestClassifier::fit(&x_train, &y_train, TWEAKED_PARAMS)
-    .and_then(|rf| {
-      println!("Serializing random forest...");
-      let bytes_rf = bincode::serialize(&rf).unwrap();
-      File::create(format!("mbti_rf__{}.model", member_id))
-        .and_then(|mut f| f.write_all(&bytes_rf))
-        .expect(format!("Can not persist random_forest {}", member_id).as_str());
-      rf.predict(&x_test)
-    })
-    .unwrap();
-  println!("Random Forest accuracy: {}", accuracy(&y_test, &y_hat_rf));
-  println!("MSE: {}", mean_squared_error(&y_test, &y_hat_rf));
-
+  if member_id == "ALL" {
+    println!("{:?}", DEFAULT_PARAMS);
+    println!("{:?}", TWEAKED_PARAMS);
+    let y_hat_rf: Vec<f64> = RandomForestClassifier::fit(&x_train, &y_train, TWEAKED_PARAMS)
+      .and_then(|rf| {
+        println!("Serializing random forest...");
+        let bytes_rf = bincode::serialize(&rf).unwrap();
+        File::create(format!("mbti_rf__{}.model", member_id))
+          .and_then(|mut f| f.write_all(&bytes_rf))
+          .expect(format!("Can not persist random_forest {}", member_id).as_str());
+        rf.predict(&x_test)
+      })
+      .unwrap();
+    // Evaluate
+    println!("Random Forest accuracy: {}", accuracy(&y_test, &y_hat_rf));
+    println!("MSE: {}", mean_squared_error(&y_test, &y_hat_rf));
+  }
   // SVM
-  let y_hat_svm: Vec<f64> = SVC::fit(&x_train, &y_train, SVCParameters::default().with_c(200.0))
-    .and_then(|svm| {
-      let bytes_rf = bincode::serialize(&svm).unwrap();
-      File::create(format!("mbti_svm__{}.model", member_id))
-        .and_then(|mut f| f.write_all(&bytes_rf))
-        .expect(format!("Can not persist svm {}", member_id).as_str());
-      svm.predict(&x_test)
-    })
-    .unwrap();
-  // Calculate test error    
-  println!("Random Forest accuracy: {}", accuracy(&y_test, &y_hat_rf));
-  println!("MSE: {}", mean_squared_error(&y_test, &y_hat_rf));
-  println!("AUC SVM: {}", roc_auc_score(&y_test, &y_hat_svm));
+  else {
+    let y_hat_svm: Vec<f64> = SVC::fit(&x_train, &y_train, SVCParameters::default().with_c(200.0))
+      .and_then(|svm| {
+        let bytes_rf = bincode::serialize(&svm).unwrap();
+        File::create(format!("mbti_svm__{}.model", member_id))
+          .and_then(|mut f| f.write_all(&bytes_rf))
+          .expect(format!("Can not persist svm {}", member_id).as_str());
+        svm.predict(&x_test)
+      })
+      .unwrap();
+    // Evaluate  
+    println!("Random Forest accuracy: {}", accuracy(&y_test, &y_hat_svm));
+    println!("MSE: {}", mean_squared_error(&y_test, &y_hat_svm));
+    println!("AUC SVM: {}", roc_auc_score(&y_test, &y_hat_svm));
+  }
   
-  // Load the Model
-  println!("Loading random forest...");
-  let rf: RandomForestClassifier<f64> = {
-    let mut buf: Vec<u8> = Vec::new();
-    File::open(format!("mbti_rf__{}.model", member_id))
-      .and_then(|mut f| f.read_to_end(&mut buf))
-      .expect("Can not load model");
-    bincode::deserialize(&buf).expect("Can not deserialize the model")
-  };
+  // // Load the Model
+  // println!("Loading random forest...");
+  // let rf: RandomForestClassifier<f64> = {
+  //   let mut buf: Vec<u8> = Vec::new();
+  //   File::open(format!("mbti_rf__{}.model", member_id))
+  //     .and_then(|mut f| f.read_to_end(&mut buf))
+  //     .expect("Can not load model");
+  //   bincode::deserialize(&buf).expect("Can not deserialize the model")
+  // };
   
 
-  println!("Validation of serialized model...");
-  let y_pred = rf.predict(&x_test).unwrap();
-  // assert!(y_hat_rf == y_pred, "Inconsistent models.");
+  // println!("Validation of serialized model...");
+  // let y_pred = rf.predict(&x_test).unwrap();
+  // // assert!(y_hat_rf == y_pred, "Inconsistent models.");
 
-  // Calculate the accuracy
-  println!("Metrics about model.");
-  println!("Accuracy: {}", accuracy(&y_test, &y_pred));
-  // Calculate test error
-  println!("MSE: {}", mean_squared_error(&y_test, &y_pred));
+  // // Calculate the accuracy
+  // println!("Metrics about model.");
+  // println!("Accuracy: {}", accuracy(&y_test, &y_pred));
+  // // Calculate test error
+  // println!("MSE: {}", mean_squared_error(&y_test, &y_pred));
 }
 
 fn build_sets(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, leaf_a: u8, leaf_b: u8) -> (Vec<Vec<f64>>, Vec<u8>) {
@@ -606,8 +610,7 @@ fn main() -> Result<(), Error> {
   }
 
   let model_rf_all_path = Path::new("mbti_rf_all.model");
-  let model_svm_all_path = Path::new("mbti_svm_all.model");
-  if !model_rf_all_path.exists() || !model_svm_all_path.exists() {
+  if !model_rf_all_path.exists() {
     println!("Generating generic model");
     train(&corpus, &classifiers, "ALL");
   } else {
