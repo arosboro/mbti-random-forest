@@ -573,23 +573,32 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
 }
 
 fn build_sets(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, leaf_a: u8, leaf_b: u8) -> (Vec<Vec<f64>>, Vec<u8>) {
-  let mut corpus_set: Vec<Vec<f64>> = Vec::new();
-  let mut classifiers_set: Vec<u8> = Vec::new();
+  let mut left_set: Vec<Vec<f64>> = Vec::new();
+  let mut left_classifiers: Vec<u8> = Vec::new();
+  let mut right_set: Vec<Vec<f64>> = Vec::new();
+  let mut right_classifiers: Vec<u8> = Vec::new();
   for (i, y) in classifiers.iter().enumerate() {
     let left = *y & leaf_a != 0u8;
     let right = *y & leaf_b != 0u8;
     if left {
-      corpus_set.push(corpus[i].clone());
-      classifiers_set.push(0u8);
+      left_set.push(corpus[i].clone());
+      left_classifiers.push(0u8);
     } else if right {
-      corpus_set.push(corpus[i].clone());
-      classifiers_set.push(1u8);
+      right_set.push(corpus[i].clone());
+      right_classifiers.push(1u8);
     }
     else {
       continue;
     }
   }
-  (corpus_set, classifiers_set)
+  let limit = left_set.len().min(right_set.len());
+  left_set.truncate(limit);
+  right_set.truncate(limit);
+  left_classifiers.truncate(limit);
+  right_classifiers.truncate(limit);
+  let corpus = [left_set, right_set].concat();
+  let classifiers = [left_classifiers, right_classifiers].concat();
+  (corpus, classifiers)
 }
 
 fn main() -> Result<(), Error> {
