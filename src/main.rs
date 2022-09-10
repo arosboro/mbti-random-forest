@@ -3,10 +3,14 @@ use std::io::{Write, Read};
 use std::path::Path;
 use std::time::Instant;
 use csv::Error;
+use rand::thread_rng;
+use rand::seq::SliceRandom;
 use serde::{
   Serialize, 
   Deserialize
 };
+use smartcore::svm::{LinearKernel, Kernels};
+use smartcore::svm::svc::{SVC, SVCParameters};
 use smartcore::tree::decision_tree_classifier::SplitCriterion;
 use std::collections::{HashMap, HashSet};
 // DenseMatrix wrapper around Vec
@@ -14,7 +18,7 @@ use smartcore::linalg::naive::dense_matrix::*;
 // Random Forest
 use smartcore::ensemble::random_forest_classifier::{RandomForestClassifier, RandomForestClassifierParameters};
 // Model performance
-use smartcore::metrics::{mean_squared_error, accuracy};
+use smartcore::metrics::{mean_squared_error, accuracy, roc_auc_score};
 use smartcore::model_selection::{train_test_split, KFold, cross_validate};
 use vtext::tokenize::*;
 use rust_stemmers::{Algorithm, Stemmer};
@@ -144,7 +148,7 @@ fn tokenize(post: &str, expressions: &[Regex; 3]) -> Vec<String> {
 }
 
 fn load_data() -> Vec<Sample> {
-  let samples: Vec<Sample> = {
+  let mut samples: Vec<Sample> = {
     let path: &Path = Path::new("./samples.bincode");
     if path.exists() {
       println!("Loading samples...");
@@ -193,29 +197,47 @@ fn load_data() -> Vec<Sample> {
           }
         }
       }
-      let mut samples_truncated: Vec<Sample>  = Vec::new();
+      // let mut samples_truncated: Vec<Sample>  = Vec::new();
+      // for sample in &samples {
+      //   let mut truncated_sample: Sample = Sample {
+      //     indicator: sample.indicator,
+      //     posts: Vec::new(),
+      //   };
+      //   for post in &sample.posts {
+      //     let mut post_truncated: Vec<String> = Vec::new();
+      //     if post.len() > 0 {
+      //       for i in 0..count_row {
+      //         post_truncated.push(post[i].to_owned());
+      //       }
+      //       truncated_sample.posts.push(post_truncated);
+      //     }
+      //   }
+      //   samples_truncated.push(truncated_sample);
+      // };
+      let mut samples_split: Vec<Sample> = Vec::new();
       for sample in &samples {
-        let mut truncated_sample: Sample = Sample {
-          indicator: sample.indicator,
-          posts: Vec::new(),
-        };
         for post in &sample.posts {
-          let mut post_truncated: Vec<String> = Vec::new();
-          if post.len() > 0 {
-            for i in 0..count_row {
-              post_truncated.push(post[i].to_owned());
+          let limit = (post.len() / 50) as usize;
+          for i in 0..limit {
+            if post.len() >= (i + 1) * 50 {
+              let sub_post: Vec<String> = post[i * 50..(i + 1) * 50].to_vec();
+              let split_sample: Sample = Sample {
+                indicator: sample.indicator,
+                posts: vec![sub_post],
+              };
+              samples_split.push(split_sample);
             }
-            truncated_sample.posts.push(post_truncated);
           }
         }
-        samples_truncated.push(truncated_sample);
-      };
+      }
       let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
-      let samples_bytes = bincode::serialize(&samples_truncated).unwrap();
+      let samples_bytes = bincode::serialize(&samples_split).unwrap();
       f.and_then(|mut f| f.write_all(&samples_bytes)).expect("Failed to write samples");
-      samples_truncated
+      samples_split
     }
   };
+  let mut rng = thread_rng();
+  samples.shuffle(&mut rng);
   samples
 }
 
@@ -475,7 +497,9 @@ fn tally(classifiers: &Vec<u8>) {
 
 
 fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
-  println!("Training...");
+  println!("Training... {}", member_id);
+  println!("x shape: ({}, {})", corpus.len(), corpus[0].len());
+  println!("y shape: ({}, {})", classifiers.len(), 1);
 
   let x: DenseMatrix<f64> = DenseMatrix::new(corpus.len(), corpus[0].len(), corpus.clone().into_iter().flatten().collect());
   // These are our target class labels
@@ -504,8 +528,30 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
       })
   };
 
+  let svm_ml_wrapper = |x: &DenseMatrix<f64>, y: &Vec<f64>, parameters: SVCParameters<f64, DenseMatrix<f64>, LinearKernel>| {
+    SVC::fit(x, y, parameters)
+      .and_then(|svm| {
+        unsafe { 
+          static mut ITERATIONS: u32 = 0;
+          ITERATIONS += 1;
+          println!("Iteration: {}", ITERATIONS);
+          println!("Serializing random forest...");
+          let bytes_rf = bincode::serialize(&svm).unwrap();
+          File::create(format!("mbti_svm__{}.model", member_id))
+            .and_then(|mut f| f.write_all(&bytes_rf))
+            .expect(format!("Can not persist random_forest {}", member_id).as_str());
+        }
+        // Evaluate
+        let y_hat_svm: Vec<f64> = svm.predict(x).unwrap();
+        println!("SVM accuracy: {}", accuracy(y, &y_hat_svm));
+        println!("MSE: {}", mean_squared_error(y, &y_hat_svm));
+        println!("AUC SVM: {}", roc_auc_score(y, &y_hat_svm));
+        Ok(svm)
+      })
+  };
+
   // Parameters
-  const DEFAULT_PARAMS: RandomForestClassifierParameters = RandomForestClassifierParameters {
+  const DEFAULT_RF_PARAMS: RandomForestClassifierParameters = RandomForestClassifierParameters {
     criterion: SplitCriterion::Gini,
     max_depth: None,
     min_samples_leaf: 1,
@@ -516,9 +562,7 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
     seed: 0,
   };
 
-  
-
-  const TWEAKED_PARAMS: RandomForestClassifierParameters = RandomForestClassifierParameters {
+  const TWEAKED_RF_PARAMS: RandomForestClassifierParameters = RandomForestClassifierParameters {
     /// Split criteria to use when building a tree. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
     criterion: SplitCriterion::Gini,
     /// Tree max depth. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
@@ -537,16 +581,30 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
     seed: 42u64,
   };
 
+  let default_svm_params: SVCParameters<f64, DenseMatrix<f64>, LinearKernel> = SVCParameters::default()
+    .with_epoch(2)
+    .with_c(1.0)
+    .with_tol(0.001)
+    .with_kernel(Kernels::linear());
+
+  let tweaked_svm_params: SVCParameters<f64, DenseMatrix<f64>, LinearKernel> = SVCParameters::default()
+    .with_epoch(2)
+    .with_c(1.0)
+    .with_tol(0.0001)
+    .with_kernel(Kernels::linear());
+
   // Random Forest
+  let splits = 4;
+  println!("{:.0}", (corpus.len() / splits) as f64);
   if member_id == "ALL" {
-    println!("{:?}", DEFAULT_PARAMS);
-    println!("{:?}", TWEAKED_PARAMS);
+    println!("{:?}", DEFAULT_RF_PARAMS);
+    println!("{:?}", TWEAKED_RF_PARAMS);
     let results = cross_validate(
       rf_ml_wrapper,
       &x,
       &y,
-      TWEAKED_PARAMS,
-      KFold::default().with_n_splits(3),
+      TWEAKED_RF_PARAMS,
+      KFold::default().with_n_splits(splits),
       accuracy,
     )
     .unwrap();
@@ -556,14 +614,16 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
         results.mean_train_score()
     );
   }
-  // RF Ensemble
+  // SVM Ensemble
   else {
+    println!("{:?}", default_svm_params);
+    println!("{:?}", tweaked_svm_params);
     let results = cross_validate(
-      rf_ml_wrapper,
+      svm_ml_wrapper,
       &x,
       &y,
-      TWEAKED_PARAMS,
-      KFold::default().with_n_splits(3),
+      tweaked_svm_params,
+      KFold::default().with_n_splits(splits),
       accuracy,
     )
     .unwrap();
@@ -576,37 +636,83 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
 }
 
 fn build_sets(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, leaf_a: u8, leaf_b: u8) -> (Vec<Vec<f64>>, Vec<u8>) {
-  let mut left_set: Vec<Vec<f64>> = Vec::new();
-  let mut left_classifiers: Vec<u8> = Vec::new();
-  let mut right_set: Vec<Vec<f64>> = Vec::new();
-  let mut right_classifiers: Vec<u8> = Vec::new();
-  for (i, y) in classifiers.iter().enumerate() {
-    let left = *y & leaf_a != 0u8;
-    let right = *y & leaf_b != 0u8;
-    if left {
-      left_set.push(corpus[i].clone());
-      left_classifiers.push(0u8);
-    } else if right {
-      right_set.push(corpus[i].clone());
-      right_classifiers.push(1u8);
+  let mut left_features: Vec<Vec<f64>> = Vec::new();
+  let mut right_features: Vec<Vec<f64>> = Vec::new();
+  let mut left_labels: Vec<u8> = Vec::new();
+  let mut right_labels: Vec<u8> = Vec::new();
+  let (side_index, min_sample_size) = { 
+    let mut acc:Vec<usize> = Vec::new();
+    for (i, y) in classifiers.iter().enumerate() {
+      let left = *y & leaf_a != 0u8;
+      let right = *y & leaf_b != 0u8;
+      if left {
+        left_features.push(corpus[i].clone());
+        left_labels.push(0u8);
+        acc.push(0);
+      } else if right {
+        right_features.push(corpus[i].clone());
+        right_labels.push(1u8);
+        acc.push(1);
+      } else {
+        panic!("Invalid classifier");
+      }
     }
-    else {
-      continue;
+    assert!(left_features.len() + right_features.len() == acc.len());
+    assert!(left_features.len() == left_labels.len());
+    assert!(right_features.len() == right_labels.len());
+    (acc, left_features.len().min(right_features.len()))
+  };
+  println!("Min sample size: {}", min_sample_size);
+  // println!("All samples included");
+  println!("Limited to {} samples", min_sample_size);
+  let new_corpus = {
+    let mut acc: Vec<Vec<f64>> = Vec::new();
+    let mut n: usize = 0;
+    let mut m: usize = 0;
+    for (_, y) in side_index.iter().enumerate() {
+      // Comment below conditoinal to allow All samples.
+      if *y == 0 {
+        if n < min_sample_size {
+          acc.push(left_features.get(n).unwrap().clone());
+          n += 1;
+        }
+      } else {
+        if m < min_sample_size {
+          acc.push(right_features.get(m).unwrap().clone());
+          m += 1;
+        }
+      }
     }
-  }
-  let limit = left_set.len().min(right_set.len());
-  left_set.truncate(limit);
-  right_set.truncate(limit);
-  left_classifiers.truncate(limit);
-  right_classifiers.truncate(limit);
-  let corpus = [left_set, right_set].concat();
-  let classifiers = [left_classifiers, right_classifiers].concat();
-  (corpus, classifiers)
+    assert!(acc.len() == min_sample_size * 2);
+    acc
+  };
+  let new_labels: Vec<u8> = {
+    let mut acc: Vec<u8> = Vec::new();
+    let mut n: usize = 0;
+    let mut m: usize = 0;
+    for (_, y) in side_index.iter().enumerate() {
+      if *y == 0 {
+        if n < min_sample_size {
+          acc.push(left_labels.get(n).unwrap().clone());
+          n += 1;
+        }
+      } else {
+        if m < min_sample_size {
+          acc.push(right_labels.get(m).unwrap().clone());
+          m += 1;
+        }
+      }
+    }
+    assert!(acc.len() == min_sample_size * 2);
+    acc
+  };
+  (new_corpus, new_labels)
 }
 
 fn main() -> Result<(), Error> {
   let training_set: Vec<Sample> = load_data();
   let (corpus, classifiers) = normalize(&training_set);
+  let trees = ["IE", "NS", "TF", "JP"];
   tally(&classifiers);
   // Build sets for an ensemble of models
   let (ie_corpus, ie_classifiers) = build_sets(&corpus, &classifiers, indicator::mb_flag::I, indicator::mb_flag::E);
@@ -614,17 +720,18 @@ fn main() -> Result<(), Error> {
   let (tf_corpus, tf_classifiers) = build_sets(&corpus, &classifiers, indicator::mb_flag::T, indicator::mb_flag::F);
   let (jp_corpus, jp_classifiers) = build_sets(&corpus, &classifiers, indicator::mb_flag::J, indicator::mb_flag::P);
   let ensemble = [(ie_corpus, ie_classifiers), (ns_corpus, ns_classifiers), (tf_corpus, tf_classifiers), (jp_corpus, jp_classifiers)];
+  // Build sets of an ensemble of models having a single classifier
   // Train models
-  for i in 0..4 {
-    println!{"Tally of [IE, NS, TF, JP]: {}", ["IE", "NS", "TF", "JP"][i]};
-    println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 0u8).count(), ["IE", "NS", "TF", "JP"][i].chars().nth(0).unwrap()};
-    println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 1u8).count(), ["IE", "NS", "TF", "JP"][i].chars().nth(1).unwrap()};
+  for i in 0..ensemble.len() {
+    println!{"Tally of [IE, NS, TF, JP]: {}", trees[i]};
+    println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 0u8).count(), trees[i].chars().nth(0).unwrap()};
+    println!{"{} samples for {}", ensemble[i].1.iter().filter(|&n| *n == 1u8).count(), trees[i].chars().nth(1).unwrap()};
   }
 
   let model_rf_all_path = Path::new("mbti_rf__ALL.model");
   if !model_rf_all_path.exists() {
     println!("Generating generic model");
-    train(&corpus, &classifiers, "ALL");
+    train(&corpus[0..2000].to_vec(), &classifiers[0..2000].to_vec(), "ALL");
   } else {
     println!("Generic models already exists");
     // Evaluate
@@ -642,25 +749,34 @@ fn main() -> Result<(), Error> {
     bincode::deserialize(&buf).expect("Can not deserialize the model")
   };
 
-  let mut models: Vec<RandomForestClassifier<f64>> = Vec::new();
-  for i in 0..4 {
-    let filename = format!("./mbti_rf__{}.model", ["IE", "NS", "TF", "JP"][i]);
+  let mut models: Vec<SVC<f64, DenseMatrix<f64>, LinearKernel>> = Vec::new();
+  for i in 0..ensemble.len() {
+    let _final_model = (i + 1) * 3;
+    let filename = format!("./mbti_svm__{}.model", trees[i]);
     
     let path_model = Path::new(&filename);
     if !path_model.exists() {
-      println!{"Training [IE, NS, TF, JP]: {}", ["IE", "NS", "TF", "JP"][i]};
-      train(&ensemble[i].0, &ensemble[i].1, ["IE", "NS", "TF", "JP"][i]);
-    }
-    else {
-      println!("Loading random forest {} model...", ["IE", "NS", "TF", "JP"][i]);
-      let rf: RandomForestClassifier<f64> = {
+      println!{"Training SVM model for {}", trees[i]};
+      train(&ensemble[i].0[0..2000].to_vec(), &ensemble[i].1[0..2000].to_vec(), &trees[i]);
+      let svm: SVC<f64, DenseMatrix<f64>, LinearKernel> = {
         let mut buf: Vec<u8> = Vec::new();
         File::open(path_model)
           .and_then(|mut f| f.read_to_end(&mut buf))
           .expect("Can not load model");
         bincode::deserialize(&buf).expect("Can not deserialize the model")
       };
-      models.push(rf);
+      models.push(svm);
+    }
+    else {
+      println!("Loading svm {} model...", trees[i]);
+      let svm: SVC<f64, DenseMatrix<f64>, LinearKernel> = {
+        let mut buf: Vec<u8> = Vec::new();
+        File::open(path_model)
+          .and_then(|mut f| f.read_to_end(&mut buf))
+          .expect("Can not load model");
+        bincode::deserialize(&buf).expect("Can not deserialize the model")
+      };
+      models.push(svm);
     }
   }
 
@@ -673,37 +789,42 @@ fn main() -> Result<(), Error> {
   for (i, model) in models.iter().enumerate() {
     ensemble_pred[i] = model.predict(&x_test).unwrap();
   }
-  let mut y_pred: Vec<f64> = Vec::new();
-  for i in 0..y_test.len(){
+  let mut svm_ensemble_y_pred: Vec<f64> = Vec::new();
+  for i in 0..y_test.len() {
     let mut mbti: u8 = 0u8;
-    for j in 0..4 {
-      if ensemble_pred[j][i] == 0f64 && ["IE", "NS", "TF", "JP"][j].chars().nth(0).unwrap() == 'I' {
-        mbti ^= indicator::mb_flag::I;
-      }
-      else if ensemble_pred[j][i] == 1f64 && ["IE", "NS", "TF", "JP"][j].chars().nth(1).unwrap() == 'E' {
-        mbti ^= indicator::mb_flag::E;
-      }
-      else if ensemble_pred[j][i] == 0f64 && ["IE", "NS", "TF", "JP"][j].chars().nth(0).unwrap() == 'N' {
-        mbti ^= indicator::mb_flag::N;
-      }
-      else if ensemble_pred[j][i] == 1f64 && ["IE", "NS", "TF", "JP"][j].chars().nth(1).unwrap() == 'S' {
-        mbti ^= indicator::mb_flag::S;
-      }
-      else if ensemble_pred[j][i] == 0f64 && ["IE", "NS", "TF", "JP"][j].chars().nth(0).unwrap() == 'T' {
-        mbti ^= indicator::mb_flag::T;
-      }
-      else if ensemble_pred[j][i] == 1f64 && ["IE", "NS", "TF", "JP"][j].chars().nth(1).unwrap() == 'F' {
-        mbti ^= indicator::mb_flag::F;
-      }
-      else if ensemble_pred[j][i] == 0f64 && ["IE", "NS", "TF", "JP"][j].chars().nth(0).unwrap() == 'J' {
-        mbti ^= indicator::mb_flag::J;
-      }
-      else if ensemble_pred[j][i] == 1f64 && ["IE", "NS", "TF", "JP"][j].chars().nth(1).unwrap() == 'P' {
-        mbti ^= indicator::mb_flag::P;
-      }
+    for j in 0..ensemble.len() {
+      let prediction = ensemble_pred[j].get(i);
+      // trees = ["IE", "NS", "TF", "JP"]; (Defined above)
+      let tree = trees[j];
+      let leaf_a: char = tree.chars().nth(0).unwrap();
+      let leaf_b: char = tree.chars().nth(1).unwrap();
+      let low: bool = prediction == 0f64;
+      let flag: u8 = { 
+        let flag: u8;
+        if low {
+          flag = match leaf_a {
+            'I' => indicator::mb_flag::I,
+            'N' => indicator::mb_flag::N,
+            'T' => indicator::mb_flag::T,
+            'J' => indicator::mb_flag::J,
+            _ => 0u8
+          };
+        } else {
+          flag = match leaf_b {
+            'E' => indicator::mb_flag::E,
+            'S' => indicator::mb_flag::S,
+            'F' => indicator::mb_flag::F,
+            'P' => indicator::mb_flag::P,
+            _ => 0u8
+          };
+        }
+        flag
+      };
+      mbti |= flag;
     }
-    y_pred.push(mbti as f64);
+    svm_ensemble_y_pred.push(mbti as f64);
   }
+
   // Evaluate
   let sample_report = |y: &Vec<f64>, y_hat: &Vec<f64>| {
     let indicator_accuracy = |a: &String, b: &String | -> f64 {
@@ -736,9 +857,9 @@ fn main() -> Result<(), Error> {
   };
   println!("Generic Random Forest accuracy: {}", accuracy(&y_test, &rf.predict(&x_test).unwrap()));
   sample_report(&y_test, &rf.predict(&x_test).unwrap());
-  println!("Ensemble accuracy: {}", accuracy(&y_test, &y_pred));
-  println!("MSE: {}", mean_squared_error(&y_test, &y_pred));
-  sample_report( &y_test, &y_pred);
+  println!("Ensemble Support Vector Machine accuracy: {}", accuracy(&y_test, &svm_ensemble_y_pred));
+  println!("MSE: {}", mean_squared_error(&y_test, &svm_ensemble_y_pred));
+  sample_report( &y_test, &svm_ensemble_y_pred);
 
   Ok(()) 
 }
