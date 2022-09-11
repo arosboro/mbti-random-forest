@@ -4,6 +4,7 @@ use std::path::Path;
 use std::time::Instant;
 use csv::Error;
 use rand::thread_rng;
+use rand::Rng;
 use rand::seq::SliceRandom;
 use serde::{
   Serialize, 
@@ -52,6 +53,10 @@ const IMAGE_TERMS: [&str; 14] = [
 const INVALID_WORDS: [&str; 12] = [
   "im", "mbti", "functions", "myers", "briggs", "types", "type",
   "personality", "16personalities", "16", "personalitycafe", "tapatalk"
+];
+const MBTI_TERMS: [&str; 16] = [
+  "intj", "intp", "entj", "entp", "infj", "infp", "enfj", "enfp",
+  "istj", "isfj", "estj", "esfj", "istp", "isfp", "estp", "esfp"
 ];
 const MBTI_PARTS: [&str; 35] = [
   "es", "fj", "fs", "nt", "nf", "st", "sf", "sj",
@@ -147,7 +152,7 @@ impl MBTI {
 type Post = Vec<String>;
 type Dictionary = HashMap<String, f64>;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct Sample {
   label: MBTI,
   features: Post,
@@ -169,6 +174,26 @@ fn cleanup(post: &str, expressions: &[Regex; 3]) -> String {
   acc.to_owned()
 }
 
+fn get_stopwords() -> HashSet<&'static str> {
+  let mut stopwords: HashSet<&str> = Spark::stopwords(Language::English).unwrap().iter().map(|&s| s).collect();
+  for &x in ENNEAGRAM_TERMS.iter() {
+    stopwords.insert(x);
+  }
+  for &x in IMAGE_TERMS.iter() {
+    stopwords.insert(x);
+  }
+  for &x in MBTI_PARTS.iter() {
+    stopwords.insert(x);
+  }
+  for &x in MBTI_TERMS.iter() {
+    stopwords.insert(x);
+  }
+  for &x in INVALID_WORDS.iter() {
+    stopwords.insert(x);
+  }
+  return stopwords
+}
+
 fn lemmatize(tokens: Post) -> Vec<String> {
   let mut lemmas = Vec::new();
   for token in tokens {
@@ -181,17 +206,80 @@ fn lemmatize(tokens: Post) -> Vec<String> {
 
 fn tokenize(post: &str, expressions: &[Regex; 3]) -> Vec<String> {
   let clean = cleanup(post.to_lowercase().as_str(), expressions);
-  let stopwords: HashSet<_> = Spark::stopwords(Language::English).unwrap().iter().collect();
+  let stopwords = get_stopwords();
   let tokenizer = VTextTokenizerParams::default().lang("en").build().unwrap();
   let mut tokens: Vec<&str> = tokenizer.tokenize(&clean).collect();
-  tokens.retain(|x| x.trim().len() > 0);
-  tokens.retain(|token| !stopwords.contains(token));
-  tokens.retain(|token| !ENNEAGRAM_TERMS.contains(token));
-  tokens.retain(|token| !IMAGE_TERMS.contains(token));
-  tokens.retain(|token| !MBTI_PARTS.contains(token));
-  tokens.retain(|token| !INVALID_WORDS.contains(token));
-  let clean_tokens = tokens.iter().map(|x| x.trim().to_string()).collect();
+  tokens.retain(|&x| x.trim().len() > 0);
+  tokens.retain(|&token| !stopwords.contains(token));
+  let clean_tokens = tokens.iter().map(|&x| x.trim().to_string()).collect();
   lemmatize(clean_tokens)
+}
+
+fn oversample(samples: Vec<Sample>) -> Vec<Sample> {
+  let mut oversampled = Vec::new();
+  let mut counts = HashMap::new();
+  for s in samples.iter() {
+    let count = counts.entry(s.label.indicator).or_insert(0);
+    *count += 1;
+  }
+  let max = counts.values().max().unwrap();
+  for (i, s) in samples.iter().enumerate() {
+    let count = counts.get(&s.label.indicator).unwrap();
+    let ratio = max / count;
+    oversampled.push(s.clone());
+    for _ in 0..ratio {
+      let mut new_sample = s.clone();
+      let mut new_features = Vec::new();
+      let mut index = 0;
+      let mut l: usize = if i > 0 { i - 1 } else { 0 };
+      let mut r: usize = i + 1;
+      let mut knn: [usize; 5] = [0; 5];
+      // This will simulate selecting random terms from the 5 nearest neighbors which have the same label.
+      while new_features.len() < s.features.len() {
+        if index < knn.len()  {
+          // go left.
+          if l > i && l > 0 {
+            if samples[l].label.indicator == new_sample.label.indicator {
+              knn[index] = l;
+              l = if l > 1 { l - 1 } else { 0 };
+              index += 1;
+            }
+          }
+          // go right.
+          if r < samples.len() {
+            if samples[r].label.indicator == new_sample.label.indicator {
+              knn[index] = r;
+              r += 1;
+              index += 1;
+            }
+          }
+        }
+        if index == knn.len() - 1 {
+          for _ in 0..s.features.len() {
+            let mut rng = rand::thread_rng();
+            let index = rng.gen_range(0..5);
+            let neighbor = knn[index];
+            let mut rng = rand::thread_rng();
+            let index = rng.gen_range(0..s.features.len());
+            new_features.push(samples[neighbor].features[index].clone());
+          }
+          // random number between 0..5
+          let n = rand::thread_rng().gen_range(0..5);
+          // one of the 5 nearest neighbors.
+          let k = knn[n];
+          // random number between 0..12
+          let j = rand::thread_rng().gen_range(0..12);
+          new_features.push(samples[k].features[j].clone());
+        }
+        if index >= knn.len() {
+          break;
+        }
+      }
+      new_sample.features = new_features;
+      oversampled.push(new_sample);
+    }
+  }
+  oversampled
 }
 
 fn load_data() -> Vec<Sample> {
@@ -213,20 +301,19 @@ fn load_data() -> Vec<Sample> {
       for row in reader.deserialize::<Row>() {
         match row {
           Ok(row) => {
-            let mut sample: Sample = Sample {
-              label: MBTI::from_string(&row.r#type),
-              features: Vec::new(),
-            };
-
+            // Split each row on the delimiter "|||" and collect into a vector
             for post_str in row.posts.split("|||") {
+              // Turn a string into a vector of lematized tokens.  @see tokenize
               let tokens = tokenize(post_str, &expressions);
               if tokens.len() > 0 {
-                tokens.iter().enumerate().for_each(|(i, _)| {
-                  sample.features.push(tokens[i].to_owned());
-                });
+                // println!("{}: {}", &row.r#type, tokens.join(" "));
+                let sample: Sample = Sample {
+                  label: MBTI::from_string(&row.r#type),
+                  features: tokens,
+                };
+                samples.push(sample)
               }
             }
-            samples.push(sample)
           },
           Err(e) => println!("Error: {}", e),
         }
@@ -238,16 +325,35 @@ fn load_data() -> Vec<Sample> {
       samples
     }
   };
+
   // Make sure all posts are the same average length
-  let avg_post_length = samples.iter().map(|x| x.features.len()).sum::<usize>() / samples.len();
+  let total_post_length: usize = samples.iter().map(|x| x.features.len()).sum();
+  let total_posts: usize = samples.len();
+  let avg_post_length = total_post_length / total_posts;
   println!("Average post length: {}", avg_post_length);
+  samples.retain(|x| x.features.len() >= avg_post_length);
+  for sample in samples.iter_mut() {
+    sample.features.truncate(avg_post_length);
+  }
+  println!("Total posts: {}", samples.len());
+  println!("Maximum feature length: {}", samples.iter().map(|x| x.features.len()).max().unwrap());
+  println!("Minimum feature length: {}", samples.iter().map(|x| x.features.len()).min().unwrap());
+
+  let mut oversampled = oversample(samples);
+
+  println!("Total posts: {}", oversampled.len());
+  println!("Maximum feature length: {}", oversampled.iter().map(|x| x.features.len()).max().unwrap());
+  println!("Minimum feature length: {}", oversampled.iter().map(|x| x.features.len()).min().unwrap());
+
   // Shuffle the sample set.
   let mut rng = thread_rng();
-  samples.shuffle(&mut rng);
-  // for i in 0..10 {
-  //   println!("{:?}", samples[i]);
-  // }
-  samples
+  oversampled.shuffle(&mut rng);
+
+  for i in 0..10 {
+    println!("{}: {}", oversampled[i].label.indicator, oversampled[i].features.join(" "));
+    println!("{}", oversampled[i].features.len());
+  }
+  oversampled
 }
 
 fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
