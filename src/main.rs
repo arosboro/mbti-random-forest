@@ -235,41 +235,38 @@ fn oversample(samples: Vec<Sample>) -> Vec<Sample> {
       let mut r: usize = i + 1;
       let mut knn: [usize; 5] = [0; 5];
       // This will simulate selecting random terms from the 5 nearest neighbors which have the same label.
-      while new_features.len() < s.features.len() {
-        if index < knn.len()  {
+      while new_features.len() < s.features.len() && (l > 0 || r < samples.len()) {
+        while index < knn.len() && (l > 0 || r < samples.len() && index < knn.len())  {
           // go left.
-          if l > i && l > 0 {
+          if l < i && l > 0 {
             if samples[l].label.indicator == new_sample.label.indicator {
               knn[index] = l;
-              l = if l > 1 { l - 1 } else { 0 };
               index += 1;
             }
+            l = if l > 1 { l - 1 } else { 0 };
           }
-          // go right.
-          if r < samples.len() {
-            if samples[r].label.indicator == new_sample.label.indicator {
-              knn[index] = r;
+          if index < knn.len() {
+            // go right.
+            if r > i && r < samples.len() {
+              if samples[r].label.indicator == new_sample.label.indicator {
+                knn[index] = r;
+                index += 1;
+              }
               r += 1;
-              index += 1;
             }
           }
         }
-        if index == knn.len() - 1 {
+        if index == knn.len() {
           for _ in 0..s.features.len() {
-            let mut rng = rand::thread_rng();
-            let index = rng.gen_range(0..5);
-            let neighbor = knn[index];
-            let mut rng = rand::thread_rng();
-            let index = rng.gen_range(0..s.features.len());
-            new_features.push(samples[neighbor].features[index].clone());
+            // random number between 0..5
+            let n = rand::thread_rng().gen_range(0..5);
+            // one of the 5 nearest neighbors.
+            let k = knn[n];
+            // random number between 0..12
+            let j = rand::thread_rng().gen_range(0..12);
+            new_features.push(samples[k].features[j].clone());
           }
-          // random number between 0..5
-          let n = rand::thread_rng().gen_range(0..5);
-          // one of the 5 nearest neighbors.
-          let k = knn[n];
-          // random number between 0..12
-          let j = rand::thread_rng().gen_range(0..12);
-          new_features.push(samples[k].features[j].clone());
+          break;
         }
         if index >= knn.len() {
           break;
@@ -350,8 +347,7 @@ fn load_data() -> Vec<Sample> {
   oversampled.shuffle(&mut rng);
 
   for i in 0..10 {
-    println!("{}: {}", oversampled[i].label.indicator, oversampled[i].features.join(" "));
-    println!("{}", oversampled[i].features.len());
+    println!("{}: {}", oversampled[i].label.to_string(), oversampled[i].features.join(" "));
   }
   oversampled
 }
@@ -711,7 +707,7 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
   let tweaked_svm_params: SVCParameters<f64, DenseMatrix<f64>, LinearKernel> = SVCParameters::default()
     .with_epoch(2)
     .with_c(1.0)
-    .with_tol(0.001)
+    .with_tol(0.0001)
     .with_kernel(Kernels::linear());
 
   // Random Forest
@@ -784,8 +780,8 @@ fn build_sets(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, leaf_a: u8, leaf_b:
     (acc, left_features.len().min(right_features.len()))
   };
   println!("Min sample size: {}", min_sample_size);
-  // println!("All samples included");
-  println!("Limited to {} samples", min_sample_size);
+  println!("All samples included");
+  // println!("Limited to {} samples", min_sample_size);
   let new_corpus = {
     let mut acc: Vec<Vec<f64>> = Vec::new();
     let mut n: usize = 0;
@@ -793,18 +789,18 @@ fn build_sets(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, leaf_a: u8, leaf_b:
     for (_, y) in side_index.iter().enumerate() {
       // Comment below conditoinal to allow All samples.
       if *y == 0 {
-        if n < min_sample_size {
+        // if n < min_sample_size {
           acc.push(left_features.get(n).unwrap().clone());
           n += 1;
-        }
+        // }
       } else {
-        if m < min_sample_size {
+        // if m < min_sample_size {
           acc.push(right_features.get(m).unwrap().clone());
           m += 1;
-        }
+        // }
       }
     }
-    assert!(acc.len() == min_sample_size * 2);
+    // assert!(acc.len() == min_sample_size * 2);
     acc
   };
   let new_labels: Vec<u8> = {
@@ -813,18 +809,18 @@ fn build_sets(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, leaf_a: u8, leaf_b:
     let mut m: usize = 0;
     for (_, y) in side_index.iter().enumerate() {
       if *y == 0 {
-        if n < min_sample_size {
+        // if n < min_sample_size {
           acc.push(left_labels.get(n).unwrap().clone());
           n += 1;
-        }
+        // }
       } else {
-        if m < min_sample_size {
+        // if m < min_sample_size {
           acc.push(right_labels.get(m).unwrap().clone());
           m += 1;
-        }
+        // }
       }
     }
-    assert!(acc.len() == min_sample_size * 2);
+    // assert!(acc.len() == min_sample_size * 2);
     acc
   };
   (new_corpus, new_labels)
@@ -852,7 +848,7 @@ fn main() -> Result<(), Error> {
   let model_rf_all_path = Path::new("mbti_rf__ALL.model");
   if !model_rf_all_path.exists() {
     println!("Generating generic model");
-    train(&corpus[0..100000].to_vec(), &classifiers[0..100000].to_vec(), "ALL");
+    train(&corpus, &classifiers, "ALL");
   } else {
     println!("Generic models already exists");
     // Evaluate
@@ -878,7 +874,7 @@ fn main() -> Result<(), Error> {
     let path_model = Path::new(&filename);
     if !path_model.exists() {
       println!{"Training SVM model for {}", trees[i]};
-      train(&ensemble[i].0[0..2000].to_vec(), &ensemble[i].1[0..2000].to_vec(), &trees[i]);
+      train(&ensemble[i].0, &ensemble[i].1, &trees[i]);
       let svm: SVC<f64, DenseMatrix<f64>, LinearKernel> = {
         let mut buf: Vec<u8> = Vec::new();
         File::open(path_model)
@@ -911,7 +907,8 @@ fn main() -> Result<(), Error> {
     println!("MSE: {}", mean_squared_error(&y_test, &ensemble_pred[i]));
   }
   let mut svm_ensemble_y_pred: Vec<f64> = Vec::new();
-  for i in 0..2000 {
+  assert!(ensemble_pred.len() == 4);
+  for i in 0..ensemble_pred[0].len() {
     let mut mbti: u8 = 0u8;
     for j in 0..ensemble.len() {
       let prediction = ensemble_pred[j].get(i);
