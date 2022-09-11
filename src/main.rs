@@ -26,6 +26,44 @@ use regex::Regex;
 use stopwords::{Spark, Language, Stopwords};
 use nalgebra::{DMatrix, DMatrixSlice};
 
+// Stop words borrowed from analysis by github.com/riskmakov/MBTI-predictor
+const ENNEAGRAM_TERMS: [&str; 23] = [
+  "1w2", "2w1", "2w3", "3w2", "3w4", "4w3", "4w5",
+  "6w5", "6w7", "7w6", "7w8", "8w7", "8w9", "9w8",
+  "so", "sp", "sx", "enneagram", "ennegram", "socionics", "tritype",
+  "7s", "8s"
+];
+const IMAGE_TERMS: [&str; 14] = [
+  "gif", 
+  "giphy", 
+  "image", 
+  "img", 
+  "imgur", 
+  "jpeg", 
+  "jpg", 
+  "JPG", 
+  "photobucket", 
+  "php",
+  "player_embedded", 
+  "png", 
+  "staticflickr", 
+  "tinypic",
+];
+const INVALID_WORDS: [&str; 12] = [
+  "im", "mbti", "functions", "myers", "briggs", "types", "type",
+  "personality", "16personalities", "16", "personalitycafe", "tapatalk"
+];
+const MBTI_PARTS: [&str; 35] = [
+  "es", "fj", "fs", "nt", "nf", "st", "sf", "sj",
+  "nts", "nfs", "sts", "sfs", "sjs",
+  "enxp", "esxp", "exfj", "exfp", "extp",
+  "inxj", 
+  "ixfp", "ixtp", "ixtj", "ixfj",
+  "xnfp", "xntp", "xnfj", "xnfp", "xstj", "xstp",
+  "nfp", "ntp", "ntj", "nfp", "sfj", 
+  "sps",
+];
+
 
 #[derive(Debug, Deserialize)]
 struct Row {
@@ -106,15 +144,20 @@ impl MBTI {
   }
 }
 
-
-
 type Post = Vec<String>;
 type Dictionary = HashMap<String, f64>;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Sample {
-  indicator: MBTI,
-  posts: Vec<Vec<String>>,
+  label: MBTI,
+  features: Post,
+}
+
+fn load_bytes(path: &Path) -> Vec<u8> {
+  let mut buf = Vec::new();
+  File::open(path).unwrap()
+    .read_to_end(&mut buf).expect(&format!("Unable to read file {}", path.to_str().unwrap()));
+  buf
 }
 
 fn cleanup(post: &str, expressions: &[Regex; 3]) -> String {
@@ -143,24 +186,25 @@ fn tokenize(post: &str, expressions: &[Regex; 3]) -> Vec<String> {
   let mut tokens: Vec<&str> = tokenizer.tokenize(&clean).collect();
   tokens.retain(|x| x.trim().len() > 0);
   tokens.retain(|token| !stopwords.contains(token));
+  tokens.retain(|token| !ENNEAGRAM_TERMS.contains(token));
+  tokens.retain(|token| !IMAGE_TERMS.contains(token));
+  tokens.retain(|token| !MBTI_PARTS.contains(token));
+  tokens.retain(|token| !INVALID_WORDS.contains(token));
   let clean_tokens = tokens.iter().map(|x| x.trim().to_string()).collect();
   lemmatize(clean_tokens)
 }
 
 fn load_data() -> Vec<Sample> {
+  let csv_target = Path::new("./mbti_1.csv");
   let mut samples: Vec<Sample> = {
     let path: &Path = Path::new("./samples.bincode");
     if path.exists() {
       println!("Loading samples...");
-      let mut buf = Vec::new();
-      File::open(path).unwrap()
-        .read_to_end(&mut buf).expect("Unable to read file");
-      let samples: Vec<Sample> = bincode::deserialize(&buf).unwrap();
-      samples
+      bincode::deserialize(&load_bytes(path)).unwrap()
     } else {
       println!("Saving samples...");
       let mut samples: Vec<Sample> = Vec::new();
-      let mut reader = csv::Reader::from_path("./MBTI 500.csv").unwrap();
+      let mut reader = csv::Reader::from_path(csv_target).unwrap();
       let expressions = [
         Regex::new(r"https?://[a-zA-Z0-9_%./]+\??(([a-z0-9%]+=[a-z0-9%]+&?)+)?").unwrap(),
         Regex::new(r"[^a-zA-Z0-9 ]").unwrap(),
@@ -170,18 +214,16 @@ fn load_data() -> Vec<Sample> {
         match row {
           Ok(row) => {
             let mut sample: Sample = Sample {
-              indicator: MBTI::from_string(&row.r#type),
-              posts: Vec::new(),
+              label: MBTI::from_string(&row.r#type),
+              features: Vec::new(),
             };
 
-            for post in row.posts.split("|||") {
-              let tokens = tokenize(post, &expressions);
-              let mut post_vec = Vec::new();
+            for post_str in row.posts.split("|||") {
+              let tokens = tokenize(post_str, &expressions);
               if tokens.len() > 0 {
                 tokens.iter().enumerate().for_each(|(i, _)| {
-                  post_vec.push(tokens[i].to_owned());
+                  sample.features.push(tokens[i].to_owned());
                 });
-                sample.posts.push(post_vec);
               }
             }
             samples.push(sample)
@@ -189,55 +231,22 @@ fn load_data() -> Vec<Sample> {
           Err(e) => println!("Error: {}", e),
         }
       }
-      let mut count_row = samples[0].posts[0].len();
-      for sample in &samples {
-        for post in &sample.posts {
-          if post.len() < count_row && post.len() > 0 {
-            count_row = post.len();
-          }
-        }
-      }
-      // let mut samples_truncated: Vec<Sample>  = Vec::new();
-      // for sample in &samples {
-      //   let mut truncated_sample: Sample = Sample {
-      //     indicator: sample.indicator,
-      //     posts: Vec::new(),
-      //   };
-      //   for post in &sample.posts {
-      //     let mut post_truncated: Vec<String> = Vec::new();
-      //     if post.len() > 0 {
-      //       for i in 0..count_row {
-      //         post_truncated.push(post[i].to_owned());
-      //       }
-      //       truncated_sample.posts.push(post_truncated);
-      //     }
-      //   }
-      //   samples_truncated.push(truncated_sample);
-      // };
-      let mut samples_split: Vec<Sample> = Vec::new();
-      for sample in &samples {
-        for post in &sample.posts {
-          let limit = (post.len() / 50) as usize;
-          for i in 0..limit {
-            if post.len() >= (i + 1) * 50 {
-              let sub_post: Vec<String> = post[i * 50..(i + 1) * 50].to_vec();
-              let split_sample: Sample = Sample {
-                indicator: sample.indicator,
-                posts: vec![sub_post],
-              };
-              samples_split.push(split_sample);
-            }
-          }
-        }
-      }
+      // Save samples
       let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path);
-      let samples_bytes = bincode::serialize(&samples_split).unwrap();
+      let samples_bytes = bincode::serialize(&samples).unwrap();
       f.and_then(|mut f| f.write_all(&samples_bytes)).expect("Failed to write samples");
-      samples_split
+      samples
     }
   };
+  // Make sure all posts are the same average length
+  let avg_post_length = samples.iter().map(|x| x.features.len()).sum::<usize>() / samples.len();
+  println!("Average post length: {}", avg_post_length);
+  // Shuffle the sample set.
   let mut rng = thread_rng();
   samples.shuffle(&mut rng);
+  // for i in 0..10 {
+  //   println!("{:?}", samples[i]);
+  // }
   samples
 }
 
@@ -246,13 +255,11 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
   let path_fy = Path::new("./classifiers.bincode");
   if !path_fx.exists() || !path_fy.exists() {
     println!("Saving x and y matrices...");
-    let mut x_set: Vec<Vec<String>> = Vec::new();
+    let mut x_set: Vec<Post> = Vec::new();
     for sample in training_set.iter() {
-      for post in sample.posts.iter() {
-        x_set.push(post.to_owned());
-      }
-    };
-    let y_set: Vec<u8> = training_set.iter().map(|x| x.indicator.indicator).collect();
+      x_set.push(sample.features.clone());
+    }
+    let y_set: Vec<u8> = training_set.iter().map(|x| x.label.indicator).collect();
     println!("{} x samples", x_set.len());
     println!("{} y labels", y_set.len());
 
@@ -535,12 +542,20 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
           static mut ITERATIONS: u32 = 0;
           ITERATIONS += 1;
           println!("Iteration: {}", ITERATIONS);
-          println!("Serializing random forest...");
-          let bytes_rf = bincode::serialize(&svm).unwrap();
-          File::create(format!("mbti_svm__{}.model", member_id))
-            .and_then(|mut f| f.write_all(&bytes_rf))
-            .expect(format!("Can not persist random_forest {}", member_id).as_str());
         }
+        println!("Serializing support vector machine...");
+        let filename = format!("./mbti_svm__{}.model", member_id);
+        let path_model: &Path = Path::new(&filename);
+        let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path_model);
+        let bytes = bincode::serialize(&svm).unwrap();
+        f.and_then(|mut f| f.write_all(&bytes)).expect("Failed to write samples");
+        let svm: SVC<f64, DenseMatrix<f64>, LinearKernel> = {
+          let mut buf: Vec<u8> = Vec::new();
+          File::open(path_model)
+            .and_then(|mut f| f.read_to_end(&mut buf))
+            .expect("Can not load model");
+          bincode::deserialize(&buf).expect("Can not deserialize the model")
+        };
         // Evaluate
         let y_hat_svm: Vec<f64> = svm.predict(x).unwrap();
         println!("SVM accuracy: {}", accuracy(y, &y_hat_svm));
@@ -572,7 +587,7 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
     /// The minimum number of samples required to split an internal node. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
     min_samples_split: 2,
     /// The number of trees in the forest.
-    n_trees: 100,
+    n_trees: 300,
     /// Number of random sample of predictors to use as split candidates.
     m: Some(64),
     /// Whether to keep samples used for tree generation. This is required for OOB prediction.
@@ -590,11 +605,11 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
   let tweaked_svm_params: SVCParameters<f64, DenseMatrix<f64>, LinearKernel> = SVCParameters::default()
     .with_epoch(2)
     .with_c(1.0)
-    .with_tol(0.0001)
+    .with_tol(0.001)
     .with_kernel(Kernels::linear());
 
   // Random Forest
-  let splits = 4;
+  let splits = 3;
   println!("{:.0}", (corpus.len() / splits) as f64);
   if member_id == "ALL" {
     println!("{:?}", DEFAULT_RF_PARAMS);
@@ -731,7 +746,7 @@ fn main() -> Result<(), Error> {
   let model_rf_all_path = Path::new("mbti_rf__ALL.model");
   if !model_rf_all_path.exists() {
     println!("Generating generic model");
-    train(&corpus[0..2000].to_vec(), &classifiers[0..2000].to_vec(), "ALL");
+    train(&corpus[0..100000].to_vec(), &classifiers[0..100000].to_vec(), "ALL");
   } else {
     println!("Generic models already exists");
     // Evaluate
@@ -779,18 +794,18 @@ fn main() -> Result<(), Error> {
       models.push(svm);
     }
   }
-
-  let x: DenseMatrix<f64> = DenseMatrix::from_2d_vec(&corpus);
-  // These are our target class labels
-  let y: Vec<f64> = classifiers.into_iter().map(|x| x as f64).collect();
-  // Split bag into training/test (80%/20%)
-  let (_x_train, x_test, _y_train, y_test) = train_test_split(&x, &y, 0.2, true);
+  // Get predictions for ensemble
   let mut ensemble_pred: [Vec<f64>; 4] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
   for (i, model) in models.iter().enumerate() {
+    let x = DenseMatrix::from_2d_vec(&ensemble[i].0);
+    let y = ensemble[i].1.iter().map(|x| *x as f64).collect::<Vec<f64>>();
+    let (_x_train, x_test, _y_train, y_test) = train_test_split(&x, &y, 0.2, true);
     ensemble_pred[i] = model.predict(&x_test).unwrap();
+    println!("{} accuracy: {}", trees[i], accuracy(&y_test, &ensemble_pred[i]));
+    println!("MSE: {}", mean_squared_error(&y_test, &ensemble_pred[i]));
   }
   let mut svm_ensemble_y_pred: Vec<f64> = Vec::new();
-  for i in 0..y_test.len() {
+  for i in 0..2000 {
     let mut mbti: u8 = 0u8;
     for j in 0..ensemble.len() {
       let prediction = ensemble_pred[j].get(i);
@@ -855,6 +870,12 @@ fn main() -> Result<(), Error> {
       println!("{},       {},   {:.2},     {:.2}           {}", predicted, actual, variance, mean_variance, y_hat[i] == y[i]);
     }
   };
+  // Load data for Random Forest test predictions
+  let x: DenseMatrix<f64> = DenseMatrix::from_2d_vec(&corpus);
+  // These are our target class labels
+  let y: Vec<f64> = classifiers.into_iter().map(|x| x as f64).collect();
+  // Split bag into training/test (80%/20%)
+  let (_x_train, x_test, _y_train, y_test) = train_test_split(&x, &y, 0.2, true);
   println!("Generic Random Forest accuracy: {}", accuracy(&y_test, &rf.predict(&x_test).unwrap()));
   sample_report(&y_test, &rf.predict(&x_test).unwrap());
   println!("Ensemble Support Vector Machine accuracy: {}", accuracy(&y_test, &svm_ensemble_y_pred));
