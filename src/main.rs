@@ -847,17 +847,19 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
                 unsafe {
                     static mut ITERATIONS: u32 = 0;
                     ITERATIONS += 1;
+                    if ITERATIONS % 1000 == 0 {
+                      ITERATIONS = 0;
+                      println!("Serializing random forest...");
+                      let bytes_rf = bincode::serialize(&rf).unwrap();
+                      File::create(format!("mbti_rf__{}.model", member_id))
+                          .and_then(|mut f| f.write_all(&bytes_rf))
+                          .expect(format!("Can not persist random_forest {}", member_id).as_str());
+                    }
                     println!("Iteration: {}", ITERATIONS);
                 }
-                println!("Serializing random forest...");
-                let bytes_rf = bincode::serialize(&rf).unwrap();
-                File::create(format!("mbti_rf__{}.model", member_id))
-                    .and_then(|mut f| f.write_all(&bytes_rf))
-                    .expect(format!("Can not persist random_forest {}", member_id).as_str());
                 // Evaluate
                 let y_hat_rf: Vec<f64> = rf.predict(x).unwrap();
-                println!("Random forest accuracy: {}", accuracy(y, &y_hat_rf));
-                println!("MSE: {}", mean_squared_error(y, &y_hat_rf));
+                println!("Random forest accuracy: {}, MSE: {}", accuracy(y, &y_hat_rf), mean_squared_error(y, &y_hat_rf));
                 Ok(rf)
             })
         };
@@ -870,31 +872,28 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
                 unsafe {
                     static mut ITERATIONS: u32 = 0;
                     ITERATIONS += 1;
+                    if ITERATIONS % 1000 == 0 {
+                      ITERATIONS = 0;
+                      println!("Serializing support vector machine...");
+                      let filename = format!("./mbti_svm__{}.model", member_id);
+                      let path_model: &Path = Path::new(&filename);
+                      let f = std::fs::OpenOptions::new()
+                          .write(true)
+                          .create(true)
+                          .truncate(true)
+                          .open(path_model);
+                      let bytes = bincode::serialize(&svm).unwrap();
+                      f.and_then(|mut f| f.write_all(&bytes))
+                          .expect("Failed to write samples");
+                    }
                     println!("Iteration: {}", ITERATIONS);
+                    // Evaluate
+                    let y_hat_svm: Vec<f64> = svm.predict(x).unwrap();
+                    println!("SVM accuracy: {}, MSE: {}, AUC SVM: {}", accuracy(y, &y_hat_svm), mean_squared_error(y, &y_hat_svm), roc_auc_score(y, &y_hat_svm));
                 }
-                println!("Serializing support vector machine...");
-                let filename = format!("./mbti_svm__{}.model", member_id);
-                let path_model: &Path = Path::new(&filename);
-                let f = std::fs::OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .truncate(true)
-                    .open(path_model);
-                let bytes = bincode::serialize(&svm).unwrap();
-                f.and_then(|mut f| f.write_all(&bytes))
-                    .expect("Failed to write samples");
-                let svm: SVC<f64, DenseMatrix<f64>, LinearKernel> = {
-                    let mut buf: Vec<u8> = Vec::new();
-                    File::open(path_model)
-                        .and_then(|mut f| f.read_to_end(&mut buf))
-                        .expect("Can not load model");
-                    bincode::deserialize(&buf).expect("Can not deserialize the model")
-                };
                 // Evaluate
                 let y_hat_svm: Vec<f64> = svm.predict(x).unwrap();
-                println!("SVM accuracy: {}", accuracy(y, &y_hat_svm));
-                println!("MSE: {}", mean_squared_error(y, &y_hat_svm));
-                println!("AUC SVM: {}", roc_auc_score(y, &y_hat_svm));
+                println!("SVM accuracy: {}, MSE: {}, AUC SVM: {}", accuracy(y, &y_hat_svm), mean_squared_error(y, &y_hat_svm), roc_auc_score(y, &y_hat_svm));
                 Ok(svm)
             })
         };
@@ -921,11 +920,11 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
         /// The minimum number of samples required to split an internal node. See [Decision Tree Classifier](../../tree/decision_tree_classifier/index.html)
         min_samples_split: 2,
         /// The number of trees in the forest.
-        n_trees: 300,
+        n_trees: 100,
         /// Number of random sample of predictors to use as split candidates.
-        m: Some(64),
+        m: Option::None,
         /// Whether to keep samples used for tree generation. This is required for OOB prediction.
-        keep_samples: true,
+        keep_samples: false,
         /// Seed used for bootstrap sampling and feature selection for each tree.
         seed: 42u64,
     };
@@ -945,7 +944,7 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
             .with_kernel(Kernels::linear());
 
     // Random Forest
-    let splits = 3;
+    let splits = 1000;
     println!("{:.0}", (corpus.len() / splits) as f64);
     if member_id == "ALL" {
         println!("{:?}", DEFAULT_RF_PARAMS);
