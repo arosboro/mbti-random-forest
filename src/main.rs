@@ -442,7 +442,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
             DMatrix::from_fn(x_set.len(), x_set[0].len(), |i, j| x_set[i][j].to_owned());
         let classifiers: DMatrix<u8> = DMatrix::from_fn(y_set.len(), 1, |i, _| y_set[i]);
 
-        // Deterimine unique labels
+        // check that there are 16 unique labels
         let mut unique_labels: Vec<String> = Vec::new();
         for label in y_set.iter() {
             let mbti = MBTI { indicator: *label };
@@ -710,6 +710,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
     }
 }
 
+// Prints out table of each indicator count
 fn tally(classifiers: &Vec<u8>) {
     println!("Tallying...");
     println!(
@@ -841,28 +842,33 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
     // Split bag into training/test (80%/20%)
     // let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, true);
 
-    let rf_ml_wrapper =
-        |x: &DenseMatrix<f64>, y: &Vec<f64>, parameters: RandomForestClassifierParameters| {
-            RandomForestClassifier::fit(x, y, parameters).and_then(|rf| {
-                unsafe {
-                    static mut ITERATIONS: u32 = 0;
-                    ITERATIONS += 1;
-                    if ITERATIONS % 10 == 0 {
-                      ITERATIONS = 0;
-                      println!("Serializing random forest...");
-                      let bytes_rf = bincode::serialize(&rf).unwrap();
-                      File::create(format!("mbti_rf__{}.model", member_id))
-                          .and_then(|mut f| f.write_all(&bytes_rf))
-                          .expect(format!("Can not persist random_forest {}", member_id).as_str());
-                    }
-                    println!("Iteration: {}", ITERATIONS);
+    let rf_ml_wrapper = |x: &DenseMatrix<f64>,
+                         y: &Vec<f64>,
+                         parameters: RandomForestClassifierParameters| {
+        RandomForestClassifier::fit(x, y, parameters).and_then(|rf| {
+            unsafe {
+                static mut ITERATIONS: u32 = 0;
+                ITERATIONS += 1;
+                if ITERATIONS % 10 == 0 {
+                    ITERATIONS = 0;
+                    println!("Serializing random forest...");
+                    let bytes_rf = bincode::serialize(&rf).unwrap();
+                    File::create(format!("mbti_rf__{}.model", member_id))
+                        .and_then(|mut f| f.write_all(&bytes_rf))
+                        .expect(format!("Can not persist random_forest {}", member_id).as_str());
                 }
-                // Evaluate
-                let y_hat_rf: Vec<f64> = rf.predict(x).unwrap();
-                println!("Random forest accuracy: {}, MSE: {}", accuracy(y, &y_hat_rf), mean_squared_error(y, &y_hat_rf));
-                Ok(rf)
-            })
-        };
+                println!("Iteration: {}", ITERATIONS);
+            }
+            // Evaluate
+            let y_hat_rf: Vec<f64> = rf.predict(x).unwrap();
+            println!(
+                "Random forest accuracy: {}, MSE: {}",
+                accuracy(y, &y_hat_rf),
+                mean_squared_error(y, &y_hat_rf)
+            );
+            Ok(rf)
+        })
+    };
 
     let svm_ml_wrapper =
         |x: &DenseMatrix<f64>,
@@ -873,27 +879,37 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
                     static mut ITERATIONS: u32 = 0;
                     ITERATIONS += 1;
                     if ITERATIONS % 10 == 0 {
-                      ITERATIONS = 0;
-                      println!("Serializing support vector machine...");
-                      let filename = format!("./mbti_svm__{}.model", member_id);
-                      let path_model: &Path = Path::new(&filename);
-                      let f = std::fs::OpenOptions::new()
-                          .write(true)
-                          .create(true)
-                          .truncate(true)
-                          .open(path_model);
-                      let bytes = bincode::serialize(&svm).unwrap();
-                      f.and_then(|mut f| f.write_all(&bytes))
-                          .expect("Failed to write samples");
+                        ITERATIONS = 0;
+                        println!("Serializing support vector machine...");
+                        let filename = format!("./mbti_svm__{}.model", member_id);
+                        let path_model: &Path = Path::new(&filename);
+                        let f = std::fs::OpenOptions::new()
+                            .write(true)
+                            .create(true)
+                            .truncate(true)
+                            .open(path_model);
+                        let bytes = bincode::serialize(&svm).unwrap();
+                        f.and_then(|mut f| f.write_all(&bytes))
+                            .expect("Failed to write samples");
                     }
                     println!("Iteration: {}", ITERATIONS);
                     // Evaluate
                     let y_hat_svm: Vec<f64> = svm.predict(x).unwrap();
-                    println!("SVM accuracy: {}, MSE: {}, AUC SVM: {}", accuracy(y, &y_hat_svm), mean_squared_error(y, &y_hat_svm), roc_auc_score(y, &y_hat_svm));
+                    println!(
+                        "SVM accuracy: {}, MSE: {}, AUC SVM: {}",
+                        accuracy(y, &y_hat_svm),
+                        mean_squared_error(y, &y_hat_svm),
+                        roc_auc_score(y, &y_hat_svm)
+                    );
                 }
                 // Evaluate
                 let y_hat_svm: Vec<f64> = svm.predict(x).unwrap();
-                println!("SVM accuracy: {}, MSE: {}, AUC SVM: {}", accuracy(y, &y_hat_svm), mean_squared_error(y, &y_hat_svm), roc_auc_score(y, &y_hat_svm));
+                println!(
+                    "SVM accuracy: {}, MSE: {}, AUC SVM: {}",
+                    accuracy(y, &y_hat_svm),
+                    mean_squared_error(y, &y_hat_svm),
+                    roc_auc_score(y, &y_hat_svm)
+                );
                 Ok(svm)
             })
         };
