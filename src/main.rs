@@ -847,7 +847,7 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
                 unsafe {
                     static mut ITERATIONS: u32 = 0;
                     ITERATIONS += 1;
-                    if ITERATIONS % 1000 == 0 {
+                    if ITERATIONS % 10 == 0 {
                       ITERATIONS = 0;
                       println!("Serializing random forest...");
                       let bytes_rf = bincode::serialize(&rf).unwrap();
@@ -872,7 +872,7 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
                 unsafe {
                     static mut ITERATIONS: u32 = 0;
                     ITERATIONS += 1;
-                    if ITERATIONS % 1000 == 0 {
+                    if ITERATIONS % 10 == 0 {
                       ITERATIONS = 0;
                       println!("Serializing support vector machine...");
                       let filename = format!("./mbti_svm__{}.model", member_id);
@@ -944,7 +944,7 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
             .with_kernel(Kernels::linear());
 
     // Random Forest
-    let splits = 1000;
+    let splits = 10;
     println!("{:.0}", (corpus.len() / splits) as f64);
     if member_id == "ALL" {
         println!("{:?}", DEFAULT_RF_PARAMS);

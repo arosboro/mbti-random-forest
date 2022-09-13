@@ -1,0 +1,93 @@
+Loading samples...
+Average post length: 12
+Total posts: 268254
+Maximum feature length: 12
+Minimum feature length: 12
+Total posts: 1086318
+Maximum feature length: 12
+Minimum feature length: 12
+INTP: involv pretti crazi debat dad thorough enjoy due inabl offend accus flame
+ISFP: oppos clear give infp idea kid skip like one think oppos mayb
+ISTJ: languag manag mp3 workmat similar page around player play humding paid go
+ISFJ: sure lake like pictur bad even group feel kind januari go relat
+ESTJ: one stuff list one much correct guy situat post one rush honest
+ISFP: parent given that butjust butjust nice toddlersit dont saw peopl quit parent
+ENTJ: coven oh dream say grizzli year care get right year 6 care
+ENTJ: go accur school sell id go busi colleg made go happen palmetto
+INFJ: feel lol live idea curious thank felt infj come spade togeth felt
+INTP: hug kind given norm got use like come go peopl dont see
+Loading x and y matrices...
+Tallying...
+count ISTJ: 62600
+count ISFJ: 62112
+count INFJ: 95884
+count INTJ: 65848
+count ISTP: 58458
+count ISFP: 61024
+count INFP: 115644
+count INTP: 78848
+count ESTP: 59808
+count ESFP: 58800
+count ENFP: 63990
+count ENTP: 61749
+count ESTJ: 58261
+count ESFJ: 58265
+count ENFJ: 61370
+count ENTJ: 63657
+Min sample size: 485900
+All samples included
+Min sample size: 479328
+All samples included
+Min sample size: 509229
+All samples included
+Min sample size: 527997
+All samples included
+Tally of [IE, NS, TF, JP]: IE
+600418 samples for I
+485900 samples for E
+Tally of [IE, NS, TF, JP]: NS
+606990 samples for N
+479328 samples for S
+Tally of [IE, NS, TF, JP]: TF
+509229 samples for T
+577089 samples for F
+Tally of [IE, NS, TF, JP]: JP
+527997 samples for J
+558321 samples for P
+Generating generic model
+Training... ALL
+x shape: (1086318, 12)
+y shape: (1086318, 1)
+108631
+RandomForestClassifierParameters { criterion: Gini, max_depth: None, min_samples_leaf: 1, min_samples_split: 2, n_trees: 100, m: None, keep_samples: false, seed: 0 }
+RandomForestClassifierParameters { criterion: Gini, max_depth: Some(8), min_samples_leaf: 1, min_samples_split: 2, n_trees: 100, m: None, keep_samples: false, seed: 42 }
+Iteration: 1
+Random forest accuracy: 0.10655056940571922, MSE: 1404.322484928699
+Iteration: 2
+Random forest accuracy: 0.10649635977195132, MSE: 1403.4722323936314
+Iteration: 3
+Random forest accuracy: 0.10637668944835049, MSE: 1403.7141904456032
+Iteration: 4
+Random forest accuracy: 0.1065372727030969, MSE: 1403.5123945724906
+Iteration: 5
+Random forest accuracy: 0.1063275939309758, MSE: 1403.4743209987664
+Iteration: 6
+Random forest accuracy: 0.10643703602179022, MSE: 1403.8257323926086
+Iteration: 7
+Random forest accuracy: 0.10645544684080574, MSE: 1403.2586955321033
+Iteration: 8
+Random forest accuracy: 0.10646874354342806, MSE: 1403.976150829612
+Iteration: 9
+Random forest accuracy: 0.10637146653274514, MSE: 1403.6281652512512
+Serializing random forest...
+Iteration: 0
+Random forest accuracy: 0.10652898115654601, MSE: 1403.4827322036604
+Test score: 0.10645501601396475, training score: 0.1064550159355409
+Loading random forest...
+Training SVM model for IE
+Training... IE
+x shape: (1086318, 12)
+y shape: (1086318, 1)
+108631
+SVCParameters { epoch: 2, c: 1.0, tol: 0.001, kernel: LinearKernel, m: PhantomData }
+SVCParameters { epoch: 2, c: 1.0, tol: 0.0001, kernel: LinearKernel, m: PhantomData }
