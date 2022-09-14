@@ -653,16 +653,15 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                     DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
                         tf_matrix[i][j] * idf_matrix[i][j]
                     });
-                // Normalizing makes the values too tiny.
-                // let max = tf_idf.max();
-                // let tf_idf_normal: DMatrix<f64> = DMatrix::from_fn(tf_idf.nrows(), tf_idf.ncols(), |i, j| tf_idf[(i, j)] / max);
+                let max = tf_idf.max();
+                let tf_idf_normal: DMatrix<f64> = DMatrix::from_fn(tf_idf.nrows(), tf_idf.ncols(), |i, j| tf_idf[(i, j)] / max);
                 println!("tf_idf: {} seconds", start.elapsed().as_secs());
                 // Convert tf_idf to a Vec<Vec<f64>>.
                 let mut corpus_tf_idf: Vec<Vec<f64>> = Vec::new();
-                for i in 0..tf_idf.nrows() {
+                for i in 0..tf_idf_normal.nrows() {
                     let mut row: Vec<f64> = Vec::new();
-                    for j in 0..tf_idf.ncols() {
-                        row.push(tf_idf[(i, j)]);
+                    for j in 0..tf_idf_normal.ncols() {
+                        row.push(tf_idf_normal[(i, j)]);
                     }
                     corpus_tf_idf.push(row);
                 }
@@ -849,7 +848,7 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
             unsafe {
                 static mut ITERATIONS: u32 = 0;
                 ITERATIONS += 1;
-                if ITERATIONS % 10 == 0 {
+                if ITERATIONS % 3 == 0 {
                     ITERATIONS = 0;
                     println!("Serializing random forest...");
                     let bytes_rf = bincode::serialize(&rf).unwrap();
@@ -878,7 +877,7 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
                 unsafe {
                     static mut ITERATIONS: u32 = 0;
                     ITERATIONS += 1;
-                    if ITERATIONS % 10 == 0 {
+                    if ITERATIONS % 3 == 0 {
                         ITERATIONS = 0;
                         println!("Serializing support vector machine...");
                         let filename = format!("./mbti_svm__{}.model", member_id);
@@ -960,7 +959,7 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
             .with_kernel(Kernels::linear());
 
     // Random Forest
-    let splits = 10;
+    let splits = 3;
     println!("{:.0}", (corpus.len() / splits) as f64);
     if member_id == "ALL" {
         println!("{:?}", DEFAULT_RF_PARAMS);
@@ -969,7 +968,7 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
             rf_ml_wrapper,
             &x,
             &y,
-            TWEAKED_RF_PARAMS,
+            DEFAULT_RF_PARAMS,
             KFold::default().with_n_splits(splits),
             accuracy,
         )
@@ -1111,10 +1110,10 @@ fn main() -> Result<(), Error> {
         indicator::mb_flag::P,
     );
     let ensemble = [
-        (ie_corpus, ie_classifiers),
-        (ns_corpus, ns_classifiers),
-        (tf_corpus, tf_classifiers),
-        (jp_corpus, jp_classifiers),
+        (ie_corpus[0..2000].to_vec(), ie_classifiers[0..2000].to_vec()),
+        (ns_corpus[0..2000].to_vec(), ns_classifiers[0..2000].to_vec()),
+        (tf_corpus[0..2000].to_vec(), tf_classifiers[0..2000].to_vec()),
+        (jp_corpus[0..2000].to_vec(), jp_classifiers[0..2000].to_vec()),
     ];
     // Build sets of an ensemble of models having a single classifier
     // Train models
@@ -1175,7 +1174,14 @@ fn main() -> Result<(), Error> {
         }
     }
     // Get predictions for ensemble
+    let mut ensemble_y_test: [Vec<f64>; 4] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
     let mut ensemble_pred: [Vec<f64>; 4] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+    let types: [[u8; 2]; 4] = [
+        [indicator::mb_flag::I, indicator::mb_flag::E],
+        [indicator::mb_flag::N, indicator::mb_flag::S],
+        [indicator::mb_flag::T, indicator::mb_flag::F],
+        [indicator::mb_flag::J, indicator::mb_flag::P],
+    ];
     for (i, model) in models.iter().enumerate() {
         let x = DenseMatrix::from_2d_vec(&ensemble[i].0);
         let y = ensemble[i]
@@ -1185,13 +1191,15 @@ fn main() -> Result<(), Error> {
             .collect::<Vec<f64>>();
         let (_x_train, x_test, _y_train, y_test) = train_test_split(&x, &y, 0.2, true);
         ensemble_pred[i] = model.predict(&x_test).unwrap();
+        ensemble_y_test[i] = y_test;
         println!(
             "{} accuracy: {}",
             trees[i],
-            accuracy(&y_test, &ensemble_pred[i])
+            accuracy(&ensemble_y_test[i], &ensemble_pred[i])
         );
-        println!("MSE: {}", mean_squared_error(&y_test, &ensemble_pred[i]));
+        println!("MSE: {}", mean_squared_error(&ensemble_y_test[i], &ensemble_pred[i]));
     }
+    let mut svm_ensemble_y_test: Vec<f64> = Vec::new();
     let mut svm_ensemble_y_pred: Vec<f64> = Vec::new();
     assert!(ensemble_pred.len() == 4);
     for i in 0..ensemble_pred[0].len() {
@@ -1227,6 +1235,16 @@ fn main() -> Result<(), Error> {
             mbti |= flag;
         }
         svm_ensemble_y_pred.push(mbti as f64);
+        let ie_idx = ensemble_y_test[0].get(i) as usize;
+        let ns_idx = ensemble_y_test[1].get(i) as usize;
+        let tf_idx = ensemble_y_test[2].get(i) as usize;
+        let jp_idx = ensemble_y_test[3].get(i) as usize;
+        let ie = types[0][ie_idx];
+        let ns = types[1][ns_idx];
+        let tf = types[2][tf_idx];
+        let jp = types[3][jp_idx];
+        let test_mbti = ie ^ ns ^ tf ^ jp;
+        svm_ensemble_y_test.push(test_mbti as f64);
     }
 
     // Evaluate
@@ -1291,10 +1309,10 @@ fn main() -> Result<(), Error> {
     sample_report(&y_test, &rf.predict(&x_test).unwrap());
     println!(
         "Ensemble Support Vector Machine accuracy: {}",
-        accuracy(&y_test, &svm_ensemble_y_pred)
+        accuracy(&svm_ensemble_y_test, &svm_ensemble_y_pred)
     );
-    println!("MSE: {}", mean_squared_error(&y_test, &svm_ensemble_y_pred));
-    sample_report(&y_test, &svm_ensemble_y_pred);
+    println!("MSE: {}", mean_squared_error(&svm_ensemble_y_test, &svm_ensemble_y_pred));
+    sample_report(&svm_ensemble_y_test, &svm_ensemble_y_pred);
 
     Ok(())
 }
