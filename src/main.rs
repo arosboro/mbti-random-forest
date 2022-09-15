@@ -954,8 +954,8 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
     let tweaked_svm_params: SVCParameters<f64, DenseMatrix<f64>, LinearKernel> =
         SVCParameters::default()
             .with_epoch(2)
-            .with_c(1.0)
-            .with_tol(0.0001)
+            .with_c(2.0)
+            .with_tol(0.0045)
             .with_kernel(Kernels::linear());
 
     // Random Forest
@@ -968,7 +968,7 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
             rf_ml_wrapper,
             &x,
             &y,
-            DEFAULT_RF_PARAMS,
+            TWEAKED_RF_PARAMS,
             KFold::default().with_n_splits(splits),
             accuracy,
         )
