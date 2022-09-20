@@ -898,25 +898,305 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                     corpus_tf_idf.push(row);
                 }
 
-                let mut heatmap: Vec<Vec<f64>> = Vec::new();
+                // Calculate a grid graphed image of the frequency at which each personality type's
+                // common terms appear in the document based on the corpus frequency of the word
+                // overall.
+
+                // Take the overall score of 12 terms and divide by the maximum score of any 12
+                // terms.  Then plot that score's value with precision, 2 decimal places, on a 4x4
+                // cell.  The cell with the highest score is the personality type that the document.
+
+                // The graph is a 256 bit grid with 16 cells for each personality type.
+                // and so on.
+
+                // The score for each personality type is the sum of the scores of the 12 terms
+                // that are most common to that personality type.
+
+                // Calculate the overall frequency as a logarithm of all of the terms used.
+                let (overall, overall_terms) = {
+                    let path_overall = Path::new("./overall.bincode");
+                    let overall: DMatrix<f64>;
+                    if !path_overall.exists() {
+                        println!("Creating overall...");
+                        overall = DMatrix::from_fn(corpus.nrows(), 16, |i, j| {
+                            if i % 250 == 0 {
+                                println!("overall: {} of {}", i, corpus.nrows());
+                            }
+                            corpus.row(i).iter().fold(0.0, |mut acc: f64, term| {
+                                let mut val: f64 = 0.0;
+                                if personality_freq[j].contains_key(term) {
+                                    val = personality_freq[j][term];
+                                }
+                                acc += (val / overall_freq[term]) as f64;
+                                acc
+                            })
+                        });
+                        let mut obj: Vec<Vec<f64>> = Vec::new();
+                        for i in 0..overall.nrows() {
+                            let mut row: Vec<f64> = Vec::new();
+                            for j in 0..overall.ncols() {
+                                row.push(overall[(i, j)]);
+                            }
+                            obj.push(row);
+                        }
+                        println!("Saving overall frequencies for each classification...");
+                        let overall_bytes = bincode::serialize(&obj).unwrap();
+                        let mut f = File::create(path_overall).unwrap();
+                        f.write_all(&overall_bytes).expect("Failed to write overall");
+                        println!("Saved overall frequencies for each classification.");
+                    }
+                    else {
+                        println!("Loading overall frequencies for each classification...");
+                        let mut buf = Vec::new();
+                        File::open(path_overall)
+                            .unwrap()
+                            .read_to_end(&mut buf)
+                            .expect("Unable to read file");
+                        let obj: Vec<Vec<f64>> = bincode::deserialize(&buf).unwrap();
+                        overall = DMatrix::from_fn(obj.len(), obj[0].len(), |i, j| obj[i][j]);
+                    }
+                    let overall_terms = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| {
+                        if i % 250 == 0 {
+                            println!("overall_terms: {} of {}", i, corpus.nrows());
+                        }
+                        let term = &corpus[(i, j)];
+                        // a tuple containing 16 values, one for each personality type.
+                        let mut val: [f64; 16] = [0.0; 16];
+                        for x in 0..16 {
+                            if personality_freq[x].contains_key(term) {
+                                val[x] = (personality_freq[x][term] / overall_freq[term]) as f64;
+                            }
+                            else {
+                                val[x] = 0.0;
+                            }
+                        }
+                        val
+                    });
+                    (overall, overall_terms)
+                };
+
+                // for i in 0..corpus.nrows() {
+                //     for j in 0..corpus.ncols() {
+                //         let term = &corpus[(i, j)];
+                //         for n in 0..16 {
+                //             let mut val = 0.0;
+                //             if personality_freq[n].contains_key(term) {
+                //                 val = personality_freq[n][term];
+                //             }
+                //             let score: f64 = val / overall_freq[term] as f64;
+                //             overall[(i,n)] += score;
+                //         }
+                //     }
+                // }
+                println!("Starting heatmap");
+                let _heatmap: Vec<Vec<f64>> = {
+                    let path_heatmap = Path::new("./heatmap.bincode");
+                    let mut heatmap: Vec<Vec<f64>>;
+                    if !path_heatmap.exists() {
+                        // Calculate the 256 bit grid.
+                        heatmap = Vec::new();
+                        let max_overall = overall.max();
+                        for i in 0..corpus.nrows() {
+                            let image: DMatrix<f64> = DMatrix::from_fn(16, 16, |y, x| {
+                                let n: usize;
+                                // The first personality type is plotted like so:
+                                // [(0,0), (0,1), (0,2), (0,3),
+                                //  (1,0), (1,1), (1,2), (1,3),
+                                //  (2,0), (2,1), (2,2), (2,3),
+                                //  (3,0), (3,1), (3,2), (3,3)]
+                                if x <= 3 && y <= 3 {
+                                    n = 0;
+                                }
+                                // The second personality type is plotted like so:
+                                // [(4,0), (4,1), (4,2), (4,3),
+                                //  (5,0), (5,1), (5,2), (5,3),
+                                //  (6,0), (6,1), (6,2), (6,3),
+                                //  (7,0), (7,1), (7,2), (7,3)]
+                                else if x >= 4 && x <= 7 && y <= 3 {
+                                    n = 1;
+                                }
+                                // The third personality type is plotted like so:
+                                // [(8,0), (8,1), (8,2), (8,3),
+                                //  (9,0), (9,1), (9,2), (9,3),
+                                //  (10,0), (10,1), (10,2), (10,3),
+                                //  (11,0), (11,1), (11,2), (11,3)]
+                                else if x >= 8 && x <= 11 && y <= 3 {
+                                    n = 2;
+                                }
+                                // The fourth personality type is plotted like so:
+                                // [(12,0), (12,1), (12,2), (12,3),
+                                //  (13,0), (13,1), (13,2), (13,3),
+                                //  (14,0), (14,1), (14,2), (14,3),
+                                //  (15,0), (15,1), (15,2), (15,3)]
+                                else if x >= 12 && x <= 15 && y <= 3 {
+                                    n = 3;
+                                }
+                                // The fifth personality type is plotted like so:
+                                // [(0,4), (0,5), (0,6), (0,7),
+                                //  (1,4), (1,5), (1,6), (1,7),
+                                //  (2,4), (2,5), (2,6), (2,7),
+                                //  (3,4), (3,5), (3,6), (3,7)]
+                                else if x <= 3 && y >= 4 && y <= 7 {
+                                    n = 4;
+                                }
+                                // The sixth personality type is plotted like so:
+                                // [(4,4), (4,5), (4,6), (4,7),
+                                //  (5,4), (5,5), (5,6), (5,7),
+                                //  (6,4), (6,5), (6,6), (6,7),
+                                //  (7,4), (7,5), (7,6), (7,7)]
+                                else if x >= 4 && x <= 7 && y >= 4 && y <= 7 {
+                                    n = 5;
+                                }
+                                // The seventh personality type is plotted like so:
+                                // [(8,4), (8,5), (8,6), (8,7),
+                                //  (9,4), (9,5), (9,6), (9,7),
+                                //  (10,4), (10,5), (10,6), (10,7),
+                                //  (11,4), (11,5), (11,6), (11,7)]
+                                else if x >= 8 && x <= 11 && y >= 4 && y <= 7 {
+                                    n = 6;
+                                }
+                                // The eighth personality type is plotted like so:
+                                // [(12,4), (12,5), (12,6), (12,7),
+                                //  (13,4), (13,5), (13,6), (13,7),
+                                //  (14,4), (14,5), (14,6), (14,7),
+                                //  (15,4), (15,5), (15,6), (15,7)]
+                                else if x >= 12 && x <= 15 && y >= 4 && y <= 7 {
+                                    n = 7;
+                                }
+                                // The ninth personality type is plotted like so:
+                                // [(0,8), (0,9), (0,10), (0,11),
+                                //  (1,8), (1,9), (1,10), (1,11),
+                                //  (2,8), (2,9), (2,10), (2,11),
+                                //  (3,8), (3,9), (3,10), (3,11)]
+                                else if x <= 3 && y >= 8 && y <= 11 {
+                                    n = 8;
+                                }
+                                // The tenth personality type is plotted like so:
+                                // [(4,8), (4,9), (4,10), (4,11),
+                                //  (5,8), (5,9), (5,10), (5,11),
+                                //  (6,8), (6,9), (6,10), (6,11),
+                                //  (7,8), (7,9), (7,10), (7,11)]
+                                else if x >= 4 && x <= 7 && y >= 8 && y <= 11 {
+                                    n = 9;
+                                }
+                                // The eleventh personality type is plotted like so:
+                                // [(8,8), (8,9), (8,10), (8,11),
+                                //  (9,8), (9,9), (9,10), (9,11),
+                                //  (10,8), (10,9), (10,10), (10,11),
+                                //  (11,8), (11,9), (11,10), (11,11)]
+                                else if x >= 8 && x <= 11 && y >= 8 && y <= 11 {
+                                    n = 10;
+                                }
+                                // The twelfth personality type is plotted like so:
+                                // [(12,8), (12,9), (12,10), (12,11),
+                                //  (13,8), (13,9), (13,10), (13,11),
+                                //  (14,8), (14,9), (14,10), (14,11),
+                                //  (15,8), (15,9), (15,10), (15,11)]
+                                else if x >= 12 && x <= 15 && y >= 8 && y <= 11 {
+                                    n = 11;
+                                }
+                                // The thirteenth personality type is plotted like so:
+                                // [(0,12), (0,13), (0,14), (0,15),
+                                //  (1,12), (1,13), (1,14), (1,15),
+                                //  (2,12), (2,13), (2,14), (2,15),
+                                //  (3,12), (3,13), (3,14), (3,15)]
+                                else if x <= 3 && y >= 12 && y <= 15 {
+                                    n = 12;
+                                }
+                                // The fourteenth personality type is plotted like so:
+                                // [(4,12), (4,13), (4,14), (4,15),
+                                //  (5,12), (5,13), (5,14), (5,15),
+                                //  (6,12), (6,13), (6,14), (6,15),
+                                //  (7,12), (7,13), (7,14), (7,15)]
+                                else if x >= 4 && x <= 7 && y >= 12 && y <= 15 {
+                                    n = 13;
+                                }
+                                // The fifteenth personality type is plotted like so:
+                                // [(8,12), (8,13), (8,14), (8,15),
+                                //  (9,12), (9,13), (9,14), (9,15),
+                                //  (10,12), (10,13), (10,14), (10,15),
+                                //  (11,12), (11,13), (11,14), (11,15)]
+                                else if x >= 8 && x <= 11 && y >= 12 && y <= 15 {
+                                    n = 14;
+                                }
+                                // The sixteenth personality type is plotted like so:
+                                // [(12,12), (12,13), (12,14), (12,15),
+                                //  (13,12), (13,13), (13,14), (13,15),
+                                //  (14,12), (14,13), (14,14), (14,15),
+                                //  (15,12), (15,13), (15,14), (15,15)]
+                                else if x >= 12 && x <= 15 && y >= 12 && y <= 15 {
+                                    n = 15;
+                                } else {
+                                    println!("x: {}, y: {}", x, y);
+                                    panic!("Invalid x and y values.");
+                                }
+                                overall[(i, n)] / max_overall
+                            });
+                            // Flatten the 2D DMatrix into a 1D Vector.
+                            let mut flattened: Vec<f64> = Vec::new();
+                            let mut max = 0.0;
+                            for i in 0..16 {
+                                for j in 0..16 {
+                                    let val = image[(i, j)];
+                                    if val > max {
+                                        max = val;
+                                    }
+                                    flattened.push(val);
+                                }
+                            }
+                            assert_eq!(flattened.len(), 256);
+                            let normalized: Vec<f64> = {
+                                let mut normalized: Vec<f64> = Vec::new();
+                                for i in 0..256 {
+                                    let val = flattened[i];
+                                    let decimal_val: Decimal = Decimal::from_f64(val / max).unwrap();
+                                    normalized.push(decimal_val.round_dp(2).to_f64().unwrap());
+                                }
+                                normalized
+                            };
+                            heatmap.push(normalized);
+                            if i % 250 == 0 {
+                                println!("i: {} of {}", i, corpus.nrows());
+                            }
+                        }
+                        println!("Saving heatmap...");
+                        let f = std::fs::OpenOptions::new()
+                            .write(true)
+                            .create(true)
+                            .truncate(true)
+                            .open(path_heatmap);
+                        let bytes = bincode::serialize(&heatmap).unwrap();
+                        f.and_then(|mut f| f.write_all(&bytes))
+                            .expect("Failed to write heatmap");
+                        println!("Done.");
+                    }
+                    else {
+                        let f = std::fs::File::open(path_heatmap).unwrap();
+                        heatmap = bincode::deserialize_from(f).unwrap();
+                    }
+                    heatmap
+                };
+
+                let mut barchart: Vec<Vec<f64>> = Vec::new();
                 for i in 0..corpus.nrows() {
                     let mut row: Vec<f64> = Vec::new();
-                    for y in 0..10 {
-                        let height: f64 = 10.0 - y as f64;
-                        for x in 0..personality_freq.len() {
-                            let mut overall: f64 = 0.0;
-                            for n in 0..corpus.ncols() {
-                                let term = &corpus[(i, n)];
-                                let mut val = 0.0;
-                                if personality_freq[x].contains_key(term) {
-                                    val = personality_freq[x][term];
-                                }
-                                let temp: f64 = val / overall_freq[term] as f64;
-                                let cell: f64 = Decimal::from_f64(temp).unwrap().round_dp(2).to_f64().unwrap();
-                                overall += cell;
-                            }
-                            overall /= corpus.ncols() as f64;
-                            if height >= 0.0 && overall * 10.0 > height {
+                    let mut max_overall: f64 = 0.0;
+                    for x in 0..16 {
+                        let val_overall: f64 = overall[(i, x)];
+                        max_overall = if val_overall > max_overall {
+                            val_overall
+                        } else {
+                            max_overall
+                        };
+                    }
+                    for y in 0..16 {
+                        let height: f64 = 16.0 - y as f64;
+                        let axis = 8.0;
+                        for x in 0..16 {
+                            let val_overall: f64 = overall[(i, x)];
+                            let fill = val_overall / max_overall * 16.0;
+                            if height >= axis && axis + (fill / 2.0) >= height ||
+                                height < axis && axis - (fill / 2.0) <= height {
                                 row.push(1.0);
                             }
                             else {
@@ -924,27 +1204,57 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                             }
                         }
                     }
-                    assert_eq!(row.len(), 160);
-                    heatmap.push(row);
+                    assert_eq!(row.len(), 256);
+                    barchart.push(row);
                 }
-                // let mut corpus_tf_idf: Vec<Vec<f64>> = Vec::new();
-                // for i in 0..bar_chart_flat.nrows() {
-                //     let mut row: Vec<f64> = Vec::new();
-                //     for j in 0..bar_chart_flat.ncols() {
-                //         row.push(bar_chart_flat[(i, j)]);
-                //     }
-                //     corpus_tf_idf.push(row);
-                // }
+
+                let mut heatchart: Vec<Vec<f64>> = Vec::new();
+                for i in 0..corpus.nrows() {
+                    let mut row: Vec<f64> = Vec::new();
+                    for y in 0..16 {
+                        let _height: f64 = 16.0 - y as f64;
+                        for x in 0..12 {
+                            if x % 3 == 0 {
+                                // it spaces the values out by inserting 4 empty columns to get to 16.
+                                row.push(0.0);
+                            }
+                            let term_freq = overall_terms[(i, x)][y];
+                            let temp: Decimal = Decimal::from_f64(term_freq).unwrap();
+                            row.push(temp.round_dp(2).to_f64().unwrap());
+                        }
+                    }
+                    assert_eq!(row.len(), 256);
+                    heatchart.push(row);
+                }
+
+                let mut normalized: Vec<Vec<f64>> = Vec::new();
+                for i in 0..heatchart.len() {
+                    let mut row: Vec<f64> = Vec::new();
+                    let mut max = 0.0;
+                    for j in 0..heatchart[i].len() {
+                        let val = heatchart[i][j];
+                        if val > max {
+                            max = val;
+                        }
+                    }
+                    for j in 0..heatchart[i].len() {
+                        let val = heatchart[i][j];
+                        let decimal_val: Decimal = Decimal::from_f64(val / max).unwrap();
+                        row.push(decimal_val.round_dp(2).to_f64().unwrap());
+                    }
+                    normalized.push(row);
+                }
+
                 println!("Saving tf_idf...");
                 let f = std::fs::OpenOptions::new()
                     .write(true)
                     .create(true)
                     .truncate(true)
                     .open(path);
-                let tf_idf_bytes = bincode::serialize(&heatmap).unwrap();
+                let tf_idf_bytes = bincode::serialize(&normalized).unwrap();
                 f.and_then(|mut f| f.write_all(&tf_idf_bytes))
                     .expect("Failed to write tf_idf");
-                heatmap
+                normalized
             }
         };
 
@@ -1396,7 +1706,7 @@ fn main() -> Result<(), Error> {
         map.insert(label.to_string(), Value::Array(data[i].clone()));
     }
     let obj = Value::Object(map);
-    let mbti_json_path = Path::new("../mbti_samples_blurry.json");
+    let mbti_json_path = Path::new("./mbti_samples.json");
     if !mbti_json_path.exists() {
         let f = std::fs::OpenOptions::new()
             .write(true)
@@ -1404,7 +1714,7 @@ fn main() -> Result<(), Error> {
             .truncate(true)
             .open(mbti_json_path);
         let stringify = serde_json::to_string(&obj).unwrap();
-        let bytes = bincode::serialize(&stringify).unwrap();
+        let bytes = stringify.as_bytes();
         f.and_then(|mut f| f.write_all(&bytes))
             .expect("Failed to write samples");
     }
