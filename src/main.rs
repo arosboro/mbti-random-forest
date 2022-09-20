@@ -1,7 +1,8 @@
 use csv::Error;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use rand::Rng;
+// use rand::Rng;
+// use rust_bert::pipelines::pos_tagging::POSConfig;
 use serde::{Deserialize, Serialize};
 use smartcore::svm::svc::{SVCParameters, SVC};
 use smartcore::svm::{Kernels, LinearKernel};
@@ -9,6 +10,7 @@ use smartcore::tree::decision_tree_classifier::SplitCriterion;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{Read, Write};
+use serde_json::{Map, Value};
 use std::path::Path;
 use std::time::Instant;
 // DenseMatrix wrapper around Vec
@@ -20,11 +22,13 @@ use smartcore::ensemble::random_forest_classifier::{
 // Model performance
 use nalgebra::{DMatrix, DMatrixSlice};
 use regex::Regex;
+// use rust_bert::pipelines::pos_tagging::{POSModel, POSTag};
 use rust_stemmers::{Algorithm, Stemmer};
 use smartcore::metrics::{accuracy, mean_squared_error, roc_auc_score};
 use smartcore::model_selection::{cross_validate, train_test_split, KFold};
 use stopwords::{Language, Spark, Stopwords};
 use vtext::tokenize::*;
+use rust_decimal::prelude::*;
 
 // Stop words borrowed from analysis by github.com/riskmakov/MBTI-predictor
 const ENNEAGRAM_TERMS: [&str; 23] = [
@@ -174,6 +178,8 @@ impl MBTI {
 type Post = Vec<String>;
 type Lemmas = Vec<String>;
 type Dictionary = HashMap<String, f64>;
+// type POSDictionary = HashMap<String, String>;
+type Features = (f64, f64);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Sample {
@@ -258,78 +264,78 @@ fn tokenize(post: &str, expressions: &[Regex; 3]) -> Vec<String> {
     tokens.retain(|&x| x.trim().len() > 0);
     // a token could be in stopwords so, retain ones that are not in stopwords
     tokens.retain(|&token| !stopwords.contains(token));
-    let clean_tokens = tokens.iter().map(|&x| x.trim().to_string()).collect();
+    let clean_tokens: Lemmas = tokens.iter().map(|&x| x.trim().to_string()).collect();
     lemmatize(clean_tokens)
 }
 
 // The data isn't balanced, try to oversample underrepresented classes
-fn oversample(samples: Vec<Sample>) -> Vec<Sample> {
-    let mut oversampled = Vec::new();
-    // counts contains the number of each classifier occuring in the dataset
-    let mut counts = HashMap::new();
-    for s in samples.iter() {
-        let count = counts.entry(s.label.indicator).or_insert(0);
-        *count += 1;
-    }
-    let max = counts.values().max().unwrap();
-    for (i, s) in samples.iter().enumerate() {
-        let count = counts.get(&s.label.indicator).unwrap();
-        let ratio = max / count;
-        oversampled.push(s.clone());
-        for _ in 0..ratio {
-            let mut new_sample = s.clone();
-            let mut new_features = Vec::new();
-            let mut index = 0;
-            let mut l: usize = if i > 0 { i - 1 } else { 0 };
-            let mut r: usize = i + 1;
-            let mut neighbors: [usize; 5] = [0; 5];
-            // This will simulate selecting random terms from the 5 nearest neighbors which have the same label.
-            while new_features.len() < s.lemmas.len() && (l > 0 || r < samples.len()) {
-                while index < neighbors.len()
-                    && (l > 0 || r < samples.len())
-                    && index < neighbors.len()
-                {
-                    // go left.
-                    if l < i && l > 0 {
-                        if samples[l].label.indicator == new_sample.label.indicator {
-                            neighbors[index] = l;
-                            index += 1;
-                        }
-                        l = if l > 1 { l - 1 } else { 0 };
-                    }
-                    if index < neighbors.len() {
-                        // go right.
-                        if r > i && r < samples.len() {
-                            if samples[r].label.indicator == new_sample.label.indicator {
-                                neighbors[index] = r;
-                                index += 1;
-                            }
-                            r += 1;
-                        }
-                    }
-                }
-                if index == neighbors.len() {
-                    for _ in 0..s.lemmas.len() {
-                        // random number between 0..neighbors.len()
-                        let n = rand::thread_rng().gen_range(0..neighbors.len());
-                        // one of the 5 nearest neighbors.
-                        let k = neighbors[n];
-                        // random number between 0..s.lemmas.len()
-                        let j = rand::thread_rng().gen_range(0..s.lemmas.len());
-                        new_features.push(samples[k].lemmas[j].clone());
-                    }
-                    break;
-                }
-                if index >= neighbors.len() {
-                    break;
-                }
-            }
-            new_sample.lemmas = new_features;
-            oversampled.push(new_sample);
-        }
-    }
-    oversampled
-}
+// fn oversample(samples: Vec<Sample>) -> Vec<Sample> {
+//     let mut oversampled = Vec::new();
+//     // counts contains the number of each classifier occuring in the dataset
+//     let mut counts = HashMap::new();
+//     for s in samples.iter() {
+//         let count = counts.entry(s.label.indicator).or_insert(0);
+//         *count += 1;
+//     }
+//     let max = counts.values().max().unwrap();
+//     for (i, s) in samples.iter().enumerate() {
+//         let count = counts.get(&s.label.indicator).unwrap();
+//         let ratio = max / count;
+//         oversampled.push(s.clone());
+//         for _ in 0..ratio {
+//             let mut new_sample = s.clone();
+//             let mut new_features = Vec::new();
+//             let mut index = 0;
+//             let mut l: usize = if i > 0 { i - 1 } else { 0 };
+//             let mut r: usize = i + 1;
+//             let mut neighbors: [usize; 5] = [0; 5];
+//             // This will simulate selecting random terms from the 5 nearest neighbors which have the same label.
+//             while new_features.len() < s.lemmas.len() && (l > 0 || r < samples.len()) {
+//                 while index < neighbors.len()
+//                     && (l > 0 || r < samples.len())
+//                     && index < neighbors.len()
+//                 {
+//                     // go left.
+//                     if l < i && l > 0 {
+//                         if samples[l].label.indicator == new_sample.label.indicator {
+//                             neighbors[index] = l;
+//                             index += 1;
+//                         }
+//                         l = if l > 1 { l - 1 } else { 0 };
+//                     }
+//                     if index < neighbors.len() {
+//                         // go right.
+//                         if r > i && r < samples.len() {
+//                             if samples[r].label.indicator == new_sample.label.indicator {
+//                                 neighbors[index] = r;
+//                                 index += 1;
+//                             }
+//                             r += 1;
+//                         }
+//                     }
+//                 }
+//                 if index == neighbors.len() {
+//                     for _ in 0..s.lemmas.len() {
+//                         // random number between 0..neighbors.len()
+//                         let n = rand::thread_rng().gen_range(0..neighbors.len());
+//                         // one of the 5 nearest neighbors.
+//                         let k = neighbors[n];
+//                         // random number between 0..s.lemmas.len()
+//                         let j = rand::thread_rng().gen_range(0..s.lemmas.len());
+//                         new_features.push(samples[k].lemmas[j].clone());
+//                     }
+//                     break;
+//                 }
+//                 if index >= neighbors.len() {
+//                     break;
+//                 }
+//             }
+//             new_sample.lemmas = new_features;
+//             oversampled.push(new_sample);
+//         }
+//     }
+//     oversampled
+// }
 
 fn load_data() -> Vec<Sample> {
     let csv_target = Path::new("./mbti_1.csv");
@@ -399,30 +405,30 @@ fn load_data() -> Vec<Sample> {
         samples.iter().map(|x| x.lemmas.len()).min().unwrap()
     );
 
-    let mut oversampled = oversample(samples);
+    // let mut oversampled = oversample(samples);
 
-    println!("Total posts: {}", oversampled.len());
+    println!("Total posts: {}", samples.len());
     println!(
-        "Maximum feature length: {}",
-        oversampled.iter().map(|x| x.lemmas.len()).max().unwrap()
+        "Maximum  feature length: {}",
+        samples.iter().map(|x| x.lemmas.len()).max().unwrap()
     );
     println!(
         "Minimum feature length: {}",
-        oversampled.iter().map(|x| x.lemmas.len()).min().unwrap()
+        samples.iter().map(|x| x.lemmas.len()).min().unwrap()
     );
 
     // Shuffle the sample set.
     let mut rng = thread_rng();
-    oversampled.shuffle(&mut rng);
+    samples.shuffle(&mut rng);
 
     for i in 0..10 {
         println!(
             "{}: {}",
-            oversampled[i].label.to_string(),
-            oversampled[i].lemmas.join(" ")
+            samples[i].label.to_string(),
+            samples[i].lemmas.join(" ")
         );
     }
-    oversampled
+    samples
 }
 
 fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
@@ -452,9 +458,13 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         }
         println!("{} unique labels", unique_labels.len());
 
-        let (dictionary, df_index) = {
+        let (dictionary, df_index, personality_freq, overall_freq) = {
             let path_dict: &Path = Path::new("./dictionary.bincode");
             let path_df: &Path = Path::new("./df_index.bincode");
+            let path_personality_freq: &Path = Path::new("./personality_freq.bincode");
+            let path_overall_freq: &Path = Path::new("./overall_freq.bincode");
+            // let path_pos: &Path = Path::new("./pos.bincode");
+            // let path_pos_score: &Path = Path::new("./pos_score.bincode");
             if path_dict.exists() && path_df.exists() {
                 println!("Loading dictionary...");
                 let mut buf = Vec::new();
@@ -470,28 +480,181 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                     .read_to_end(&mut buf)
                     .expect("Unable to read file");
                 let df_index: Dictionary = bincode::deserialize(&buf).unwrap();
-                (dictionary, df_index)
+                println!("Loading personality_freq...");
+                buf = Vec::new();
+                File::open(path_personality_freq)
+                    .unwrap()
+                    .read_to_end(&mut buf)
+                    .expect("Unable to read file");
+                let personality_freq: [Dictionary; 16] = bincode::deserialize(&buf).unwrap();
+                println!("Loading overall_freq...");
+                buf = Vec::new();
+                File::open(path_overall_freq)
+                    .unwrap()
+                    .read_to_end(&mut buf)
+                    .expect("Unable to read file");
+                let overall_freq: Dictionary = bincode::deserialize(&buf).unwrap();
+                // println!("Loading pos...");
+                // buf = Vec::new();
+                // File::open(path_pos)
+                //     .unwrap()
+                //     .read_to_end(&mut buf)
+                //     .expect("Unable to read file");
+                // let pos: POSDictionary = bincode::deserialize(&buf).unwrap();
+                // println!("Loading pos_score...");
+                // buf = Vec::new();
+                // File::open(path_pos_score)
+                //     .unwrap()
+                //     .read_to_end(&mut buf)
+                //     .expect("Unable to read file");
+                // let pos_score: Dictionary = bincode::deserialize(&buf).unwrap();
+                (dictionary, df_index, personality_freq, overall_freq)
             } else {
                 println!("Saving dictionary and df_index...");
                 // Create a dictionary indexing unique tokens.
                 // Also create a df_index containing the number of documents each token appears in.
                 let mut dictionary: Dictionary = HashMap::new();
-                let mut df_major: HashMap<String, f64> = HashMap::new();
-                for post in x_set {
+                let mut df_major: Dictionary = HashMap::new();
+                let mut overall_freq: Dictionary = HashMap::new();
+                let mut esfj_freq: Dictionary = HashMap::new();
+                let mut esfp_freq: Dictionary = HashMap::new();
+                let mut estj_freq: Dictionary = HashMap::new();
+                let mut estp_freq: Dictionary = HashMap::new();
+                let mut enfj_freq: Dictionary = HashMap::new();
+                let mut enfp_freq: Dictionary = HashMap::new();
+                let mut entj_freq: Dictionary = HashMap::new();
+                let mut entp_freq: Dictionary = HashMap::new();
+                let mut isfj_freq: Dictionary = HashMap::new();
+                let mut isfp_freq: Dictionary = HashMap::new();
+                let mut istj_freq: Dictionary = HashMap::new();
+                let mut istp_freq: Dictionary = HashMap::new();
+                let mut infj_freq: Dictionary = HashMap::new();
+                let mut infp_freq: Dictionary = HashMap::new();
+                let mut intj_freq: Dictionary = HashMap::new();
+                let mut intp_freq: Dictionary = HashMap::new();
+                // let mut pos: POSDictionary = HashMap::new();
+                // let mut pos_score: Dictionary = HashMap::new();
+                // let pos_model: POSModel = POSModel::new(POSConfig::default()).unwrap();
+                for (i, post) in x_set.iter().enumerate() {
+                    // let output: Vec<Vec<POSTag>> = pos_model.predict(&post);
                     let df_minor: HashMap<String, f64> =
                         post.iter().fold(HashMap::new(), |mut acc, token| {
                             *acc.entry(token.to_owned()).or_insert(0.0) += 1.0;
+                            *overall_freq.entry(token.to_owned()).or_insert(0.0) += 1.0;
                             acc
                         });
+                    if y_set[i] == indicator::ESFJ {
+                        for (token, count) in df_minor.iter() {
+                            *esfj_freq.entry(token.to_owned()).or_insert(0.0) += count;
+                        }
+                    }
+                    if y_set[i] == indicator::ESFP {
+                        for (token, count) in df_minor.iter() {
+                            *esfp_freq.entry(token.to_owned()).or_insert(0.0) += count;
+                        }
+                    }
+                    if y_set[i] == indicator::ESTJ {
+                        for (token, count) in df_minor.iter() {
+                            *estj_freq.entry(token.to_owned()).or_insert(0.0) += count;
+                        }
+                    }
+                    if y_set[i] == indicator::ESTP {
+                        for (token, count) in df_minor.iter() {
+                            *estp_freq.entry(token.to_owned()).or_insert(0.0) += count;
+                        }
+                    }
+                    if y_set[i] == indicator::ENFJ {
+                        for (token, count) in df_minor.iter() {
+                            *enfj_freq.entry(token.to_owned()).or_insert(0.0) += count;
+                        }
+                    }
+                    if y_set[i] == indicator::ENFP {
+                        for (token, count) in df_minor.iter() {
+                            *enfp_freq.entry(token.to_owned()).or_insert(0.0) += count;
+                        }
+                    }
+                    if y_set[i] == indicator::ENTJ {
+                        for (token, count) in df_minor.iter() {
+                            *entj_freq.entry(token.to_owned()).or_insert(0.0) += count;
+                        }
+                    }
+                    if y_set[i] == indicator::ENTP {
+                        for (token, count) in df_minor.iter() {
+                            *entp_freq.entry(token.to_owned()).or_insert(0.0) += count;
+                        }
+                    }
+                    if y_set[i] == indicator::ISFJ {
+                        for (token, count) in df_minor.iter() {
+                            *isfj_freq.entry(token.to_owned()).or_insert(0.0) += count;
+                        }
+                    }
+                    if y_set[i] == indicator::ISFP {
+                        for (token, count) in df_minor.iter() {
+                            *isfp_freq.entry(token.to_owned()).or_insert(0.0) += count;
+                        }
+                    }
+                    if y_set[i] == indicator::ISTJ {
+                        for (token, count) in df_minor.iter() {
+                            *istj_freq.entry(token.to_owned()).or_insert(0.0) += count;
+                        }
+                    }
+                    if y_set[i] == indicator::ISTP {
+                        for (token, count) in df_minor.iter() {
+                            *istp_freq.entry(token.to_owned()).or_insert(0.0) += count;
+                        }
+                    }
+                    if y_set[i] == indicator::INFJ {
+                        for (token, count) in df_minor.iter() {
+                            *infj_freq.entry(token.to_owned()).or_insert(0.0) += count;
+                        }
+                    }
+                    if y_set[i] == indicator::INFP {
+                        for (token, count) in df_minor.iter() {
+                            *infp_freq.entry(token.to_owned()).or_insert(0.0) += count;
+                        }
+                    }
+                    if y_set[i] == indicator::INTJ {
+                        for (token, count) in df_minor.iter() {
+                            *intj_freq.entry(token.to_owned()).or_insert(0.0) += count;
+                        }
+                    }
+                    if y_set[i] == indicator::INTP {
+                        for (token, count) in df_minor.iter() {
+                            *intp_freq.entry(token.to_owned()).or_insert(0.0) += count;
+                        }
+                    }
+                    // assert_eq!(output.len(), post.len());
                     for token in post {
                         if !dictionary.contains_key(&token.to_string()) {
                             dictionary.insert(token.to_string(), dictionary.len() as f64);
+                            // if output[j].len() > 0 {
+                                // pos.insert(token.to_string(), output[j][0].label.to_string());
+                                // pos_score.insert(output[j][0].label.to_string(), pos_score.len() as f64);
+                            // }
                         }
                     }
                     df_minor.iter().for_each(|(token, _)| {
                         *df_major.entry(token.to_string()).or_insert(0.0) += 1.0;
                     });
                 }
+                let personality_freq: [Dictionary; 16] = [
+                    esfj_freq,
+                    esfp_freq,
+                    estj_freq,
+                    estp_freq,
+                    enfj_freq,
+                    enfp_freq,
+                    entj_freq,
+                    entp_freq,
+                    isfj_freq,
+                    isfp_freq,
+                    istj_freq,
+                    istp_freq,
+                    infj_freq,
+                    infp_freq,
+                    intj_freq,
+                    intp_freq,
+                ];
                 // Serialize the dictionary.
                 println!("Saving dictionary...");
                 let mut f = std::fs::OpenOptions::new()
@@ -512,11 +675,49 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                 let df_index_bytes = bincode::serialize(&df_major).unwrap();
                 f.and_then(|mut f| f.write_all(&df_index_bytes))
                     .expect("Failed to write df_index");
-                (dictionary, df_major)
+                println!("Saving personality_freq...");
+                f = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(true)
+                    .open(path_personality_freq);
+                let personality_freq_bytes = bincode::serialize(&personality_freq).unwrap();
+                f.and_then(|mut f| f.write_all(&personality_freq_bytes))
+                    .expect("Failed to write personality_freq");
+                println!("Saving overall_freq...");
+                f = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(true)
+                    .open(path_overall_freq);
+                let overall_freq_bytes = bincode::serialize(&overall_freq).unwrap();
+                f.and_then(|mut f| f.write_all(&overall_freq_bytes))
+                    .expect("Failed to write overall_freq");
+                // println!("Saving pos...");
+                // f = std::fs::OpenOptions::new()
+                //     .write(true)
+                //     .create(true)
+                //     .truncate(true)
+                //     .open(path_pos);
+                // let pos_bytes = bincode::serialize(&pos).unwrap();
+                // f.and_then(|mut f| f.write_all(&pos_bytes))
+                //     .expect("Failed to write pos");
+                // println!("Saving pos_score...");
+                // f = std::fs::OpenOptions::new()
+                //     .write(true)
+                //     .create(true)
+                //     .truncate(true)
+                //     .open(path_pos_score);
+                // let pos_score_bytes = bincode::serialize(&pos_score).unwrap();
+                // f.and_then(|mut f| f.write_all(&pos_score_bytes))
+                //     .expect("Failed to write pos_score");
+                (dictionary, df_major, personality_freq, overall_freq)
             }
         };
 
         println!("Dictionary size: {}", dictionary.len());
+        println!("df_index size: {}", df_index.len());
+        // println!("pos size: {}", pos.len());
 
         // Create a tf_idf matrix.
 
@@ -538,7 +739,8 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
         };
         let idf = |term: &String| -> f64 {
             // Smooth inverse formula by adding 1.0 to denominator to prevent division by zero
-            (corpus.nrows() as f64 / (df_index[term] + 1.0)).ln() as f64
+            let score = (corpus.nrows() as f64 / (df_index[term] + 1.0)).ln() as f64;
+            score
         };
 
         // Create a dense matrix of term frequencies.
@@ -649,33 +851,100 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
             } else {
                 println!("Creating the tf-idf matrix by multiplying...");
                 let start = Instant::now();
-                let tf_idf: DMatrix<f64> =
-                    DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> f64 {
-                        tf_matrix[i][j] * idf_matrix[i][j]
+                let tf_idf: DMatrix<Features> =
+                    DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> Features {
+                        let score: f64 = (tf_matrix[i][j] * idf_matrix[i][j]) as f64;
+                        if score > 5.0 {
+                            println!("Score: {} unexpectedly high with term {}.", score, corpus[(i, j)]);
+                        }
+                        (score, dictionary[&corpus[(i, j)]])
                     });
                 // Normalizing makes the values too tiny.
                 // let max = tf_idf.max();
                 // let tf_idf_normal: DMatrix<f64> = DMatrix::from_fn(tf_idf.nrows(), tf_idf.ncols(), |i, j| tf_idf[(i, j)] / max);
                 println!("tf_idf: {} seconds", start.elapsed().as_secs());
                 // Convert tf_idf to a Vec<Vec<f64>>.
+                let df1: DMatrix<f64> = DMatrix::from_fn(tf_idf.nrows(), tf_idf.ncols(), |i, j| tf_idf[(i, j)].0);
+                let max = df1.max();
+                let min = df1.min();
+                println!("max: {}", max);
+                println!("min: {}", min);
+                let tf_idf_normal: DMatrix<f64> = DMatrix::from_fn(tf_idf.nrows(), tf_idf.ncols(), |i, j| df1[(i, j)] / max);
+                let df2: DMatrix<f64> = DMatrix::from_fn(tf_idf.nrows(), tf_idf.ncols(), |i, j| tf_idf[(i, j)].1 / dictionary.len() as f64);
+                // let df3: DMatrix<f64> = DMatrix::from_fn(tf_idf.nrows(), tf_idf.ncols(), |i, j| tf_idf[(i, j)].2);
+                // let grid: [DMatrix<f64>; 3] = [df1, df2, df3];
+
                 let mut corpus_tf_idf: Vec<Vec<f64>> = Vec::new();
-                for i in 0..tf_idf.nrows() {
+                for i in 0..df1.nrows() {
                     let mut row: Vec<f64> = Vec::new();
-                    for j in 0..tf_idf.ncols() {
-                        row.push(tf_idf[(i, j)]);
+                    for y in 0..12 {
+                        for x in 0..12 {
+                            let height: f64 = 12.0 - y as f64;
+                            let freq: f64 = df1[(i, x)];
+                            let size: f64 = 12.0;
+                            let _d_height: Decimal = Decimal::from_f64(height).unwrap();
+                            let _d_freq: Decimal = Decimal::from_f64(tf_idf_normal[(i, x)]).unwrap();
+                            let _id: f64 = df2[(i, x)];
+                            assert!(max < size);
+                            if height >= 0.0 && freq * max > height {
+                                row.push(1.0);
+                            }
+                            else {
+                                row.push(0.0);
+                            }
+                        }
                     }
+                    assert_eq!(row.len(), 144);
                     corpus_tf_idf.push(row);
                 }
+
+                let mut heatmap: Vec<Vec<f64>> = Vec::new();
+                for i in 0..corpus.nrows() {
+                    let mut row: Vec<f64> = Vec::new();
+                    for y in 0..10 {
+                        let height: f64 = 10.0 - y as f64;
+                        for x in 0..personality_freq.len() {
+                            let mut overall: f64 = 0.0;
+                            for n in 0..corpus.ncols() {
+                                let term = &corpus[(i, n)];
+                                let mut val = 0.0;
+                                if personality_freq[x].contains_key(term) {
+                                    val = personality_freq[x][term];
+                                }
+                                let temp: f64 = val / overall_freq[term] as f64;
+                                let cell: f64 = Decimal::from_f64(temp).unwrap().round_dp(2).to_f64().unwrap();
+                                overall += cell;
+                            }
+                            overall /= corpus.ncols() as f64;
+                            if height >= 0.0 && overall * 10.0 > height {
+                                row.push(1.0);
+                            }
+                            else {
+                                row.push(0.0);
+                            }
+                        }
+                    }
+                    assert_eq!(row.len(), 160);
+                    heatmap.push(row);
+                }
+                // let mut corpus_tf_idf: Vec<Vec<f64>> = Vec::new();
+                // for i in 0..bar_chart_flat.nrows() {
+                //     let mut row: Vec<f64> = Vec::new();
+                //     for j in 0..bar_chart_flat.ncols() {
+                //         row.push(bar_chart_flat[(i, j)]);
+                //     }
+                //     corpus_tf_idf.push(row);
+                // }
                 println!("Saving tf_idf...");
                 let f = std::fs::OpenOptions::new()
                     .write(true)
                     .create(true)
                     .truncate(true)
                     .open(path);
-                let tf_idf_bytes = bincode::serialize(&corpus_tf_idf).unwrap();
+                let tf_idf_bytes = bincode::serialize(&heatmap).unwrap();
                 f.and_then(|mut f| f.write_all(&tf_idf_bytes))
                     .expect("Failed to write tf_idf");
-                corpus_tf_idf
+                heatmap
             }
         };
 
@@ -1067,6 +1336,79 @@ fn build_sets(
 fn main() -> Result<(), Error> {
     let training_set: Vec<Sample> = load_data();
     let (corpus, classifiers) = normalize(&training_set);
+    let mut map = Map::new();
+    let mut data = [
+        Vec::new(), Vec::new(), Vec::new(), Vec::new(),
+        Vec::new(), Vec::new(), Vec::new(), Vec::new(),
+        Vec::new(), Vec::new(), Vec::new(), Vec::new(),
+        Vec::new(), Vec::new(), Vec::new(), Vec::new(),
+    ];
+    assert_eq!(0b01000000 ^ 0b00010000 ^ 0b00000100 ^ 0b00000001, 0b01010101);
+    for (i, sample) in corpus.iter().enumerate() {
+        let mbti = MBTI { indicator: classifiers[i] };
+        let label: String = mbti.to_string();
+        let mut row: Vec<Value> = Vec::new();
+        for (_j, feature) in sample.iter().enumerate() {
+            let term: Value = Value::Number(serde_json::Number::from_f64(*feature).unwrap());
+            row.push(term);
+        }
+        let idx = match label.as_str() {
+            "ESFJ" => 0,
+            "ESFP" => 1,
+            "ESTJ" => 2,
+            "ESTP" => 3,
+            "ENFJ" => 4,
+            "ENFP" => 5,
+            "ENTJ" => 6,
+            "ENTP" => 7,
+            "ISFJ" => 8,
+            "ISFP" => 9,
+            "ISTJ" => 10,
+            "ISTP" => 11,
+            "INFJ" => 12,
+            "INFP" => 13,
+            "INTJ" => 14,
+            "INTP" => 15,
+            _ => panic!("Invalid label"),
+        };
+        data[idx].push(Value::Array(row));
+    }
+    for i in 0..16 {
+        let label = match i {
+            0 => "ESFJ",
+            1 => "ESFP",
+            2 => "ESTJ",
+            3 => "ESTP",
+            4 => "ENFJ",
+            5 => "ENFP",
+            6 => "ENTJ",
+            7 => "ENTP",
+            8 => "ISFJ",
+            9 => "ISFP",
+            10 => "ISTJ",
+            11 => "ISTP",
+            12 => "INFJ",
+            13 => "INFP",
+            14 => "INTJ",
+            15 => "INTP",
+            _ => panic!("Invalid label"),
+        };
+        map.insert(label.to_string(), Value::Array(data[i].clone()));
+    }
+    let obj = Value::Object(map);
+    let mbti_json_path = Path::new("../mbti_samples_blurry.json");
+    if !mbti_json_path.exists() {
+        let f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(mbti_json_path);
+        let stringify = serde_json::to_string(&obj).unwrap();
+        let bytes = bincode::serialize(&stringify).unwrap();
+        f.and_then(|mut f| f.write_all(&bytes))
+            .expect("Failed to write samples");
+    }
+
     let trees = ["IE", "NS", "TF", "JP"];
     tally(&classifiers);
     // Build sets for an ensemble of models
