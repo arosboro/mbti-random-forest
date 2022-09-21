@@ -919,7 +919,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                     if !path_overall.exists() {
                         println!("Creating overall...");
                         overall = DMatrix::from_fn(corpus.nrows(), 16, |i, j| {
-                            if i % 250 == 0 {
+                            if i % 25000 == 0 {
                                 println!("overall: {} of {}", i, corpus.nrows());
                             }
                             corpus.row(i).iter().fold(0.0, |mut acc: f64, term| {
@@ -929,7 +929,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 }
                                 acc += (val / overall_freq[term]) as f64;
                                 acc
-                            })
+                            }) / corpus.ncols() as f64
                         });
                         let mut obj: Vec<Vec<f64>> = Vec::new();
                         for i in 0..overall.nrows() {
@@ -956,7 +956,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                         overall = DMatrix::from_fn(obj.len(), obj[0].len(), |i, j| obj[i][j]);
                     }
                     let overall_terms = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| {
-                        if i % 250 == 0 {
+                        if i % 25000 == 0 {
                             println!("overall_terms: {} of {}", i, corpus.nrows());
                         }
                         let term = &corpus[(i, j)];
@@ -989,7 +989,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                 //     }
                 // }
                 println!("Starting heatmap");
-                let _heatmap: Vec<Vec<f64>> = {
+                let heatmap: Vec<Vec<f64>> = {
                     let path_heatmap = Path::new("./heatmap.bincode");
                     let mut heatmap: Vec<Vec<f64>>;
                     if !path_heatmap.exists() {
@@ -997,9 +997,9 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                         heatmap = Vec::new();
                         let max_overall = overall.max();
                         for i in 0..corpus.nrows() {
-                            let image: DMatrix<f64> = DMatrix::from_fn(16, 16, |y, x| {
+                            let _image16: DMatrix<f64> = DMatrix::from_fn(16, 16, |y, x| {
                                 let n: usize;
-                                // The first personality type is plotted like so:
+                                // The first personality type, ESFJ, is the first 16 bits.
                                 // [(0,0), (0,1), (0,2), (0,3),
                                 //  (1,0), (1,1), (1,2), (1,3),
                                 //  (2,0), (2,1), (2,2), (2,3),
@@ -1007,7 +1007,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 if x <= 3 && y <= 3 {
                                     n = 0;
                                 }
-                                // The second personality type is plotted like so:
+                                // The second personality type, ESFP, is the second 16 bits.
                                 // [(4,0), (4,1), (4,2), (4,3),
                                 //  (5,0), (5,1), (5,2), (5,3),
                                 //  (6,0), (6,1), (6,2), (6,3),
@@ -1015,7 +1015,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 else if x >= 4 && x <= 7 && y <= 3 {
                                     n = 1;
                                 }
-                                // The third personality type is plotted like so:
+                                // The third personality type, ESTJ, is the third 16 bits.
                                 // [(8,0), (8,1), (8,2), (8,3),
                                 //  (9,0), (9,1), (9,2), (9,3),
                                 //  (10,0), (10,1), (10,2), (10,3),
@@ -1023,7 +1023,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 else if x >= 8 && x <= 11 && y <= 3 {
                                     n = 2;
                                 }
-                                // The fourth personality type is plotted like so:
+                                // The fourth personality type, ESTP, is the fourth 16 bits.
                                 // [(12,0), (12,1), (12,2), (12,3),
                                 //  (13,0), (13,1), (13,2), (13,3),
                                 //  (14,0), (14,1), (14,2), (14,3),
@@ -1031,7 +1031,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 else if x >= 12 && x <= 15 && y <= 3 {
                                     n = 3;
                                 }
-                                // The fifth personality type is plotted like so:
+                                // The fifth personality type, ENFJ, is the fifth 16 bits.
                                 // [(0,4), (0,5), (0,6), (0,7),
                                 //  (1,4), (1,5), (1,6), (1,7),
                                 //  (2,4), (2,5), (2,6), (2,7),
@@ -1039,7 +1039,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 else if x <= 3 && y >= 4 && y <= 7 {
                                     n = 4;
                                 }
-                                // The sixth personality type is plotted like so:
+                                // The sixth personality type, ENFP, is the sixth 16 bits.:
                                 // [(4,4), (4,5), (4,6), (4,7),
                                 //  (5,4), (5,5), (5,6), (5,7),
                                 //  (6,4), (6,5), (6,6), (6,7),
@@ -1047,7 +1047,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 else if x >= 4 && x <= 7 && y >= 4 && y <= 7 {
                                     n = 5;
                                 }
-                                // The seventh personality type is plotted like so:
+                                // The seventh personality type, ENTJ, is the seventh 16 bits.
                                 // [(8,4), (8,5), (8,6), (8,7),
                                 //  (9,4), (9,5), (9,6), (9,7),
                                 //  (10,4), (10,5), (10,6), (10,7),
@@ -1055,7 +1055,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 else if x >= 8 && x <= 11 && y >= 4 && y <= 7 {
                                     n = 6;
                                 }
-                                // The eighth personality type is plotted like so:
+                                // The eighth personality type, ENTP, is the eighth 16 bits.
                                 // [(12,4), (12,5), (12,6), (12,7),
                                 //  (13,4), (13,5), (13,6), (13,7),
                                 //  (14,4), (14,5), (14,6), (14,7),
@@ -1063,7 +1063,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 else if x >= 12 && x <= 15 && y >= 4 && y <= 7 {
                                     n = 7;
                                 }
-                                // The ninth personality type is plotted like so:
+                                // The ninth personality type, ISFJ, is the ninth 16 bits.:
                                 // [(0,8), (0,9), (0,10), (0,11),
                                 //  (1,8), (1,9), (1,10), (1,11),
                                 //  (2,8), (2,9), (2,10), (2,11),
@@ -1071,7 +1071,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 else if x <= 3 && y >= 8 && y <= 11 {
                                     n = 8;
                                 }
-                                // The tenth personality type is plotted like so:
+                                // The tenth personality type, ISFP, is the tenth 16 bits.:
                                 // [(4,8), (4,9), (4,10), (4,11),
                                 //  (5,8), (5,9), (5,10), (5,11),
                                 //  (6,8), (6,9), (6,10), (6,11),
@@ -1079,7 +1079,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 else if x >= 4 && x <= 7 && y >= 8 && y <= 11 {
                                     n = 9;
                                 }
-                                // The eleventh personality type is plotted like so:
+                                // The eleventh personality type, ISTJ, is the eleventh 16 bits.
                                 // [(8,8), (8,9), (8,10), (8,11),
                                 //  (9,8), (9,9), (9,10), (9,11),
                                 //  (10,8), (10,9), (10,10), (10,11),
@@ -1087,7 +1087,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 else if x >= 8 && x <= 11 && y >= 8 && y <= 11 {
                                     n = 10;
                                 }
-                                // The twelfth personality type is plotted like so:
+                                // The twelfth personality type, ISTP, is the twelfth 16 bits.
                                 // [(12,8), (12,9), (12,10), (12,11),
                                 //  (13,8), (13,9), (13,10), (13,11),
                                 //  (14,8), (14,9), (14,10), (14,11),
@@ -1095,7 +1095,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 else if x >= 12 && x <= 15 && y >= 8 && y <= 11 {
                                     n = 11;
                                 }
-                                // The thirteenth personality type is plotted like so:
+                                // The thirteenth personality type, INFJ, is the thirteenth 16 bits.
                                 // [(0,12), (0,13), (0,14), (0,15),
                                 //  (1,12), (1,13), (1,14), (1,15),
                                 //  (2,12), (2,13), (2,14), (2,15),
@@ -1103,7 +1103,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 else if x <= 3 && y >= 12 && y <= 15 {
                                     n = 12;
                                 }
-                                // The fourteenth personality type is plotted like so:
+                                // The fourteenth personality type, INFP, is the fourteenth 16 bits.
                                 // [(4,12), (4,13), (4,14), (4,15),
                                 //  (5,12), (5,13), (5,14), (5,15),
                                 //  (6,12), (6,13), (6,14), (6,15),
@@ -1111,7 +1111,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 else if x >= 4 && x <= 7 && y >= 12 && y <= 15 {
                                     n = 13;
                                 }
-                                // The fifteenth personality type is plotted like so:
+                                // The fifteenth personality type, INTJ, is the fifteenth 16 bits.
                                 // [(8,12), (8,13), (8,14), (8,15),
                                 //  (9,12), (9,13), (9,14), (9,15),
                                 //  (10,12), (10,13), (10,14), (10,15),
@@ -1119,7 +1119,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 else if x >= 8 && x <= 11 && y >= 12 && y <= 15 {
                                     n = 14;
                                 }
-                                // The sixteenth personality type is plotted like so:
+                                // The sixteenth personality type, INTP, is the sixteenth 16 bits.
                                 // [(12,12), (12,13), (12,14), (12,15),
                                 //  (13,12), (13,13), (13,14), (13,15),
                                 //  (14,12), (14,13), (14,14), (14,15),
@@ -1132,12 +1132,177 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 }
                                 overall[(i, n)] / max_overall
                             });
+                            let image8: DMatrix<f64> = DMatrix::from_fn(16, 16, |y, x| {
+                                let mut avg: f64 = 0.0;
+                                // The first 32 bits rectangle (4x8) is the indicator I.
+                                // [(0,0), (0,1), (0,2), (0,3),
+                                //  (1,0), (1,1), (1,2), (1,3),
+                                //  (2,0), (2,1), (2,2), (2,3),
+                                //  (3,0), (3,1), (3,2), (3,3),
+                                //  (4,0), (4,1), (4,2), (4,3),
+                                //  (5,0), (5,1), (5,2), (5,3),
+                                //  (6,0), (6,1), (6,2), (6,3),
+                                //  (7,0), (7,1), (7,2), (7,3)]
+                                if x <= 7 && y <= 3 {
+                                    let isfj = overall[(i, 8)] / max_overall;
+                                    let isfp = overall[(i, 9)] / max_overall;
+                                    let istj = overall[(i, 10)] / max_overall;
+                                    let istp = overall[(i, 11)] / max_overall;
+                                    let infj = overall[(i, 12)] / max_overall;
+                                    let infp = overall[(i, 13)] / max_overall;
+                                    let intj = overall[(i, 14)] / max_overall;
+                                    let intp = overall[(i, 15)] / max_overall;
+                                    avg = (isfj + isfp + istj + istp + infj + infp + intj + intp) / 8.0;
+                                }
+                                // The second 32 bits rectangle (4x8) is the indicator E.
+                                // [(0,4), (0,5), (0,6), (0,7),
+                                //  (1,4), (1,5), (1,6), (1,7),
+                                //  (2,4), (2,5), (2,6), (2,7),
+                                //  (3,4), (3,5), (3,6), (3,7),
+                                //  (4,4), (4,5), (4,6), (4,7),
+                                //  (5,4), (5,5), (5,6), (5,7),
+                                //  (6,4), (6,5), (6,6), (6,7),
+                                //  (7,4), (7,5), (7,6), (7,7)]
+                                else if x >= 4 && x <= 7 && y <= 7 {
+                                    let esfj = overall[(i, 8)] / max_overall;
+                                    let esfp = overall[(i, 9)] / max_overall;
+                                    let estj = overall[(i, 10)] / max_overall;
+                                    let estp = overall[(i, 11)] / max_overall;
+                                    let enfj = overall[(i, 12)] / max_overall;
+                                    let enfp = overall[(i, 13)] / max_overall;
+                                    let entj = overall[(i, 14)] / max_overall;
+                                    let entp = overall[(i, 15)] / max_overall;
+                                    avg = (esfj + esfp + estj + estp + enfj + enfp + entj + entp) / 8.0;
+                                }
+                                // The third 32 bits rectangle (4x8) is the indicator S.
+                                // [(0,8), (0,9), (0,10), (0,11),
+                                //  (1,8), (1,9), (1,10), (1,11),
+                                //  (2,8), (2,9), (2,10), (2,11),
+                                //  (3,8), (3,9), (3,10), (3,11),
+                                //  (4,8), (4,9), (4,10), (4,11),
+                                //  (5,8), (5,9), (5,10), (5,11),
+                                //  (6,8), (6,9), (6,10), (6,11),
+                                //  (7,8), (7,9), (7,10), (7,11)]
+                                else if x >= 8 && x <= 11 && y <= 11 {
+                                    let isfj = overall[(i, 8)] / max_overall;
+                                    let isfp = overall[(i, 9)] / max_overall;
+                                    let istj = overall[(i, 10)] / max_overall;
+                                    let istp = overall[(i, 11)] / max_overall;
+                                    let esfj = overall[(i, 8)] / max_overall;
+                                    let esfp = overall[(i, 9)] / max_overall;
+                                    let estj = overall[(i, 10)] / max_overall;
+                                    let estp = overall[(i, 11)] / max_overall;
+                                    avg = (isfj + isfp + istj + istp + esfj + esfp + estj + estp) / 8.0;
+                                }
+                                // The fourth 32 bits rectangle (4x8) is the indicator N.
+                                // [(0,12), (0,13), (0,14), (0,15),
+                                //  (1,12), (1,13), (1,14), (1,15),
+                                //  (2,12), (2,13), (2,14), (2,15),
+                                //  (3,12), (3,13), (3,14), (3,15),
+                                //  (4,12), (4,13), (4,14), (4,15),
+                                //  (5,12), (5,13), (5,14), (5,15),
+                                //  (6,12), (6,13), (6,14), (6,15),
+                                //  (7,12), (7,13), (7,14), (7,15)]
+                                else if x >= 12 && x <= 15 && y <= 15 {
+                                    let infj = overall[(i, 12)] / max_overall;
+                                    let infp = overall[(i, 13)] / max_overall;
+                                    let intj = overall[(i, 14)] / max_overall;
+                                    let intp = overall[(i, 15)] / max_overall;
+                                    let enfj = overall[(i, 12)] / max_overall;
+                                    let enfp = overall[(i, 13)] / max_overall;
+                                    let entj = overall[(i, 14)] / max_overall;
+                                    let entp = overall[(i, 15)] / max_overall;
+                                    avg = (infj + infp + intj + intp + enfj + enfp + entj + entp) / 8.0;
+                                }
+                                // The fifth 32 bits rectangle (4x8) is the indicator T.
+                                // [(8,0), (8,1), (8,2), (8,3),
+                                //  (9,0), (9,1), (9,2), (9,3),
+                                //  (10,0), (10,1), (10,2), (10,3),
+                                //  (11,0), (11,1), (11,2), (11,3),
+                                //  (12,0), (12,1), (12,2), (12,3),
+                                //  (13,0), (13,1), (13,2), (13,3),
+                                //  (14,0), (14,1), (14,2), (14,3),
+                                //  (15,0), (15,1), (15,2), (15,3)]
+                                else if x <= 3 && y >= 8 && y <= 11 {
+                                    let istj = overall[(i, 10)] / max_overall;
+                                    let istp = overall[(i, 11)] / max_overall;
+                                    let intj = overall[(i, 14)] / max_overall;
+                                    let intp = overall[(i, 15)] / max_overall;
+                                    let estj = overall[(i, 10)] / max_overall;
+                                    let estp = overall[(i, 11)] / max_overall;
+                                    let entj = overall[(i, 14)] / max_overall;
+                                    let entp = overall[(i, 15)] / max_overall;
+                                    avg = (istj + istp + intj + intp + estj + estp + entj + entp) / 8.0;
+                                }
+                                // The sixth 32 bits rectangle (4x8) is the indicator F.
+                                // [(8,4), (8,5), (8,6), (8,7),
+                                //  (9,4), (9,5), (9,6), (9,7),
+                                //  (10,4), (10,5), (10,6), (10,7),
+                                //  (11,4), (11,5), (11,6), (11,7),
+                                //  (12,4), (12,5), (12,6), (12,7),
+                                //  (13,4), (13,5), (13,6), (13,7),
+                                //  (14,4), (14,5), (14,6), (14,7),
+                                //  (15,4), (15,5), (15,6), (15,7)]
+                                else if x >= 4 && x <= 7 && y >= 8 && y <= 11 {
+                                    let isfj = overall[(i, 8)] / max_overall;
+                                    let isfp = overall[(i, 9)] / max_overall;
+                                    let infj = overall[(i, 12)] / max_overall;
+                                    let infp = overall[(i, 13)] / max_overall;
+                                    let esfj = overall[(i, 8)] / max_overall;
+                                    let esfp = overall[(i, 9)] / max_overall;
+                                    let enfj = overall[(i, 12)] / max_overall;
+                                    let enfp = overall[(i, 13)] / max_overall;
+                                    avg = (isfj + isfp + infj + infp + esfj + esfp + enfj + enfp) / 8.0;
+                                }
+                                // The seventh 32 bits rectangle (4x8) is the indicator J.
+                                // [(8,8), (8,9), (8,10), (8,11),
+                                //  (9,8), (9,9), (9,10), (9,11),
+                                //  (10,8), (10,9), (10,10), (10,11),
+                                //  (11,8), (11,9), (11,10), (11,11),
+                                //  (12,8), (12,9), (12,10), (12,11),
+                                //  (13,8), (13,9), (13,10), (13,11),
+                                //  (14,8), (14,9), (14,10), (14,11),
+                                //  (15,8), (15,9), (15,10), (15,11)]
+                                else if x >= 8 && x <= 11 && y >= 8 && y <= 11 {
+                                    let istj = overall[(i, 10)] / max_overall;
+                                    let istp = overall[(i, 11)] / max_overall;
+                                    let isfj = overall[(i, 8)] / max_overall;
+                                    let isfp = overall[(i, 9)] / max_overall;
+                                    let estj = overall[(i, 10)] / max_overall;
+                                    let estp = overall[(i, 11)] / max_overall;
+                                    let esfj = overall[(i, 8)] / max_overall;
+                                    let esfp = overall[(i, 9)] / max_overall;
+                                    avg = (istj + istp + isfj + isfp + estj + estp + esfj + esfp) / 8.0;
+                                }
+                                // The eighth 32 bits rectangle (4x8) is the indicator P.
+                                // [(8,12), (8,13), (8,14), (8,15),
+                                //  (9,12), (9,13), (9,14), (9,15),
+                                //  (10,12), (10,13), (10,14), (10,15),
+                                //  (11,12), (11,13), (11,14), (11,15),
+                                //  (12,12), (12,13), (12,14), (12,15),
+                                //  (13,12), (13,13), (13,14), (13,15),
+                                //  (14,12), (14,13), (14,14), (14,15),
+                                //  (15,12), (15,13), (15,14), (15,15)]
+                                else if x >= 12 && x <= 15 && y >= 8 && y <= 11 {
+                                    let esfp = overall[(i, 9)] / max_overall;
+                                    let estp = overall[(i, 11)] / max_overall;
+                                    let enfp = overall[(i, 13)] / max_overall;
+                                    let entp = overall[(i, 15)] / max_overall;
+                                    let isfp = overall[(i, 9)] / max_overall;
+                                    let istp = overall[(i, 11)] / max_overall;
+                                    let infp = overall[(i, 13)] / max_overall;
+                                    let intp = overall[(i, 15)] / max_overall;
+                                    avg = (esfp + estp + enfp + entp + isfp + istp + infp + intp) / 8.0;
+                                }
+                                avg
+                            });
+
                             // Flatten the 2D DMatrix into a 1D Vector.
                             let mut flattened: Vec<f64> = Vec::new();
                             let mut max = 0.0;
                             for i in 0..16 {
                                 for j in 0..16 {
-                                    let val = image[(i, j)];
+                                    let val = image8[(i, j)];
                                     if val > max {
                                         max = val;
                                     }
@@ -1155,7 +1320,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 normalized
                             };
                             heatmap.push(normalized);
-                            if i % 250 == 0 {
+                            if i % 25000 == 0 {
                                 println!("i: {} of {}", i, corpus.nrows());
                             }
                         }
@@ -1245,16 +1410,70 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                     normalized.push(row);
                 }
 
+                println!("Saving normalized visual signal...");
+                let path_normalized = &Path::new("./normalized_visual_signal.bincode");
+                let f = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(true)
+                    .open(path_normalized);
+                let bytes = bincode::serialize(&heatmap).unwrap();
+                f.and_then(|mut f| f.write_all(&bytes))
+                    .expect("Failed to write visual signal");
+
+                let personality_frequency = {
+                    let path_personality_frequency = &Path::new("./personality_frequency.bincode");
+                    let mut personality_frequency: Vec<Vec<f64>>;
+                    if !path_personality_frequency.exists() {
+                        println!("Calculating personality frequency...");
+                        personality_frequency = Vec::new();
+                        for i in 0..corpus.nrows() {
+                            let mut row: Vec<f64> = Vec::new();
+                            let mut max = 0.0;
+                            for j in 0..corpus.ncols() {
+                                for n in 0..16 {
+                                    let val = overall_terms[(i, j)][n];
+                                    if val > max {
+                                        max = val;
+                                    }
+                                }
+                            }
+                            for x in 0..corpus.ncols() {
+                                for y in 0..16 {
+                                    let val = overall_terms[(i, x)][y];
+                                    let decimal_val: Decimal = Decimal::from_f64(val / max).unwrap();
+                                    row.push(decimal_val.round_dp(2).to_f64().unwrap());
+                                }
+                            }
+                            personality_frequency.push(row);
+                        }
+                        println!("Saving personality frequency...");
+                        let f = std::fs::OpenOptions::new()
+                            .write(true)
+                            .create(true)
+                            .truncate(true)
+                            .open(path_personality_frequency);
+                        let bytes = bincode::serialize(&personality_frequency).unwrap();
+                        f.and_then(|mut f| f.write_all(&bytes))
+                            .expect("Failed to write personality frequency");
+                        println!("Done.");
+                    }
+                    else {
+                        let f = std::fs::File::open(path_personality_frequency).unwrap();
+                        personality_frequency = bincode::deserialize_from(f).unwrap();
+                    }
+                    personality_frequency
+                };
                 println!("Saving tf_idf...");
                 let f = std::fs::OpenOptions::new()
                     .write(true)
                     .create(true)
                     .truncate(true)
                     .open(path);
-                let tf_idf_bytes = bincode::serialize(&normalized).unwrap();
+                let tf_idf_bytes = bincode::serialize(&personality_frequency).unwrap();
                 f.and_then(|mut f| f.write_all(&tf_idf_bytes))
                     .expect("Failed to write tf_idf");
-                normalized
+                personality_frequency
             }
         };
 
@@ -1654,7 +1873,14 @@ fn main() -> Result<(), Error> {
         Vec::new(), Vec::new(), Vec::new(), Vec::new(),
     ];
     assert_eq!(0b01000000 ^ 0b00010000 ^ 0b00000100 ^ 0b00000001, 0b01010101);
-    for (i, sample) in corpus.iter().enumerate() {
+    let normalized_path = Path::new("./normalized_visual_signal.bincode");
+    let mut buf = Vec::new();
+    File::open(normalized_path)
+        .unwrap()
+        .read_to_end(&mut buf)
+        .expect("Unable to read file");
+    let visual_signal: Vec<Vec<f64>> = bincode::deserialize(&buf).unwrap();
+    for (i, sample) in visual_signal.iter().enumerate() {
         let mbti = MBTI { indicator: classifiers[i] };
         let label: String = mbti.to_string();
         let mut row: Vec<Value> = Vec::new();
@@ -1789,7 +2015,9 @@ fn main() -> Result<(), Error> {
         let path_model = Path::new(&filename);
         if !path_model.exists() {
             println! {"Training SVM model for {}", trees[i]};
-            train(&ensemble[i].0, &ensemble[i].1, &trees[i]);
+            let ensemble_x = ensemble[i].0.clone();
+            let ensemble_y = ensemble[i].1.clone();
+            train(&ensemble_x[0..2000].to_vec(), &ensemble_y[0..2000].to_vec(), &trees[i]);
             let svm: SVC<f64, DenseMatrix<f64>, LinearKernel> = {
                 let mut buf: Vec<u8> = Vec::new();
                 File::open(path_model)
@@ -1813,9 +2041,8 @@ fn main() -> Result<(), Error> {
     // Get predictions for ensemble
     let mut ensemble_pred: [Vec<f64>; 4] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
     for (i, model) in models.iter().enumerate() {
-        let x = DenseMatrix::from_2d_vec(&ensemble[i].0);
-        let y = ensemble[i]
-            .1
+        let x = DenseMatrix::from_2d_vec(&ensemble[i].0[0..2000].to_vec());
+        let y = ensemble[i].1[0..2000]
             .iter()
             .map(|x| *x as f64)
             .collect::<Vec<f64>>();
