@@ -3,91 +3,303 @@ Average post length: 12
 Total posts: 268254
 Maximum feature length: 12
 Minimum feature length: 12
-Total posts: 1086318
-Maximum feature length: 12
+Total posts: 268254
+Maximum  feature length: 12
 Minimum feature length: 12
-INTP: involv pretti crazi debat dad thorough enjoy due inabl offend accus flame
-ISFP: oppos clear give infp idea kid skip like one think oppos mayb
-ISTJ: languag manag mp3 workmat similar page around player play humding paid go
-ISFJ: sure lake like pictur bad even group feel kind januari go relat
-ESTJ: one stuff list one much correct guy situat post one rush honest
-ISFP: parent given that butjust butjust nice toddlersit dont saw peopl quit parent
-ENTJ: coven oh dream say grizzli year care get right year 6 care
-ENTJ: go accur school sell id go busi colleg made go happen palmetto
-INFJ: feel lol live idea curious thank felt infj come spade togeth felt
-INTP: hug kind given norm got use like come go peopl dont see
+INFP: style pretti much requir continu flow posit energi friend one seem get
+INFP: also sorri huge long singl paragraph reason window wont let creat new
+ISFJ: think combin si fe make someon good read peopl si notic detail
+INFP: great squeez thing togeth tri done two week time fiance shirt backord
+ISFP: flexibl person adapt situat friend call realli nice person dont take side
+INTP: star war rpg star war version dd alway choos high intellig high
+INTJ: appli mit caltech stanford got none despit test scoresgpa 50th percentil whatev
+INFP: verbal abus toward comput sure neighbor overhear tri format someth word excel
+ISTP: go latter tri draw end frustrat might first tri pleas backfir dont
+INFP: think infp intj get along enjoy talk weightier matter life yet differ
 Loading x and y matrices...
 Tallying...
-count ISTJ: 62600
-count ISFJ: 62112
-count INFJ: 95884
-count INTJ: 65848
-count ISTP: 58458
-count ISFP: 61024
-count INFP: 115644
-count INTP: 78848
-count ESTP: 59808
-count ESFP: 58800
-count ENFP: 63990
-count ENTP: 61749
-count ESTJ: 58261
-count ESFJ: 58265
-count ENFJ: 61370
-count ENTJ: 63657
-Min sample size: 485900
+count ISTJ: 6260
+count ISFJ: 5176
+count INFJ: 47942
+count INTJ: 32924
+count ISTP: 9743
+count ISFP: 7628
+count INFP: 57822
+count INTP: 39424
+count ESTP: 2492
+count ESFP: 1176
+count ENFP: 21330
+count ENTP: 20583
+count ESTJ: 1189
+count ESFJ: 1355
+count ENFJ: 6137
+count ENTJ: 7073
+Min sample size: 61335
 All samples included
-Min sample size: 479328
+Min sample size: 35019
 All samples included
-Min sample size: 509229
+Min sample size: 119688
 All samples included
-Min sample size: 527997
+Min sample size: 108056
 All samples included
 Tally of [IE, NS, TF, JP]: IE
-600418 samples for I
-485900 samples for E
+206919 samples for I
+61335 samples for E
 Tally of [IE, NS, TF, JP]: NS
-606990 samples for N
-479328 samples for S
+233235 samples for N
+35019 samples for S
 Tally of [IE, NS, TF, JP]: TF
-509229 samples for T
-577089 samples for F
+119688 samples for T
+148566 samples for F
 Tally of [IE, NS, TF, JP]: JP
-527997 samples for J
-558321 samples for P
+108056 samples for J
+160198 samples for P
 Generating generic model
 Training... ALL
-x shape: (1086318, 12)
-y shape: (1086318, 1)
-108631
+x shape: (268254, 12)
+y shape: (268254, 1)
+26825
 RandomForestClassifierParameters { criterion: Gini, max_depth: None, min_samples_leaf: 1, min_samples_split: 2, n_trees: 100, m: None, keep_samples: false, seed: 0 }
 RandomForestClassifierParameters { criterion: Gini, max_depth: Some(8), min_samples_leaf: 1, min_samples_split: 2, n_trees: 100, m: None, keep_samples: false, seed: 42 }
 Iteration: 1
-Random forest accuracy: 0.10655056940571922, MSE: 1404.322484928699
+Random forest accuracy: 0.21547210762629024, MSE: 876.6170245373362
 Iteration: 2
-Random forest accuracy: 0.10649635977195132, MSE: 1403.4722323936314
+Random forest accuracy: 0.21495849694318803, MSE: 874.7850373610352
 Iteration: 3
-Random forest accuracy: 0.10637668944835049, MSE: 1403.7141904456032
+Random forest accuracy: 0.21540169325844558, MSE: 875.4329365276604
 Iteration: 4
-Random forest accuracy: 0.1065372727030969, MSE: 1403.5123945724906
+Random forest accuracy: 0.21541411932335935, MSE: 875.6927199827692
 Iteration: 5
-Random forest accuracy: 0.1063275939309758, MSE: 1403.4743209987664
+Random forest accuracy: 0.21596825567765265, MSE: 875.1205861764743
 Iteration: 6
-Random forest accuracy: 0.10643703602179022, MSE: 1403.8257323926086
+Random forest accuracy: 0.2155416292160428, MSE: 872.4178122760729
 Iteration: 7
-Random forest accuracy: 0.10645544684080574, MSE: 1403.2586955321033
+Random forest accuracy: 0.21538423304574014, MSE: 877.341379867373
 Iteration: 8
-Random forest accuracy: 0.10646874354342806, MSE: 1403.976150829612
+Random forest accuracy: 0.21567417335945557, MSE: 875.408070281532
 Iteration: 9
-Random forest accuracy: 0.10637146653274514, MSE: 1403.6281652512512
+Random forest accuracy: 0.21573216142219867, MSE: 875.5783729377995
 Serializing random forest...
 Iteration: 0
-Random forest accuracy: 0.10652898115654601, MSE: 1403.4827322036604
-Test score: 0.10645501601396475, training score: 0.1064550159355409
+Random forest accuracy: 0.2159475456552444, MSE: 873.7341247323229
+Test score: 0.21554941002903732, training score: 0.21554944155276173
 Loading random forest...
 Training SVM model for IE
 Training... IE
-x shape: (1086318, 12)
-y shape: (1086318, 1)
-108631
+x shape: (2000, 12)
+y shape: (2000, 1)
+200
 SVCParameters { epoch: 2, c: 1.0, tol: 0.001, kernel: LinearKernel, m: PhantomData }
-SVCParameters { epoch: 2, c: 1.0, tol: 0.0001, kernel: LinearKernel, m: PhantomData }
+SVCParameters { epoch: 2, c: 2000.0, tol: 0.0001, kernel: LinearKernel, m: PhantomData }
+Iteration: 1
+SVM accuracy: 0.6138888888888889, MSE: 0.3861111111111111, AUC SVM: 0.48649068322981365
+SVM accuracy: 0.6138888888888889, MSE: 0.3861111111111111, AUC SVM: 0.48649068322981365
+Iteration: 2
+SVM accuracy: 0.5961111111111111, MSE: 0.4038888888888889, AUC SVM: 0.5105606541690226
+SVM accuracy: 0.5961111111111111, MSE: 0.4038888888888889, AUC SVM: 0.5105606541690226
+Iteration: 3
+SVM accuracy: 0.5638888888888889, MSE: 0.4361111111111111, AUC SVM: 0.4982187246830403
+SVM accuracy: 0.5638888888888889, MSE: 0.4361111111111111, AUC SVM: 0.4982187246830403
+Iteration: 4
+SVM accuracy: 0.29944444444444446, MSE: 0.7005555555555556, AUC SVM: 0.501353359150909
+SVM accuracy: 0.29944444444444446, MSE: 0.7005555555555556, AUC SVM: 0.501353359150909
+Iteration: 5
+SVM accuracy: 0.255, MSE: 0.745, AUC SVM: 0.5069169960474308
+SVM accuracy: 0.255, MSE: 0.745, AUC SVM: 0.5069169960474308
+Iteration: 6
+SVM accuracy: 0.3638888888888889, MSE: 0.6361111111111111, AUC SVM: 0.5138517254899263
+SVM accuracy: 0.3638888888888889, MSE: 0.6361111111111111, AUC SVM: 0.5138517254899263
+Iteration: 7
+SVM accuracy: 0.5533333333333333, MSE: 0.44666666666666666, AUC SVM: 0.5011315251858934
+SVM accuracy: 0.5533333333333333, MSE: 0.44666666666666666, AUC SVM: 0.5011315251858934
+Iteration: 8
+SVM accuracy: 0.49833333333333335, MSE: 0.5016666666666667, AUC SVM: 0.4993579692072154
+SVM accuracy: 0.49833333333333335, MSE: 0.5016666666666667, AUC SVM: 0.4993579692072154
+Iteration: 9
+SVM accuracy: 0.41055555555555556, MSE: 0.5894444444444444, AUC SVM: 0.5297265515829143
+SVM accuracy: 0.41055555555555556, MSE: 0.5894444444444444, AUC SVM: 0.5297265515829143
+Serializing support vector machine...
+Iteration: 0
+SVM accuracy: 0.3811111111111111, MSE: 0.6188888888888889, AUC SVM: 0.5160599790881691
+SVM accuracy: 0.3811111111111111, MSE: 0.6188888888888889, AUC SVM: 0.5160599790881691
+Test score: 0.45, training score: 0.4535555555555556
+Training SVM model for NS
+Training... NS
+x shape: (2000, 12)
+y shape: (2000, 1)
+200
+SVCParameters { epoch: 2, c: 1.0, tol: 0.001, kernel: LinearKernel, m: PhantomData }
+SVCParameters { epoch: 2, c: 2000.0, tol: 0.0001, kernel: LinearKernel, m: PhantomData }
+Iteration: 1
+SVM accuracy: 0.4955555555555556, MSE: 0.5044444444444445, AUC SVM: 0.5084667487684729
+SVM accuracy: 0.4955555555555556, MSE: 0.5044444444444445, AUC SVM: 0.5084667487684729
+Iteration: 2
+SVM accuracy: 0.7777777777777778, MSE: 0.2222222222222222, AUC SVM: 0.4920345358955765
+SVM accuracy: 0.7777777777777778, MSE: 0.2222222222222222, AUC SVM: 0.4920345358955765
+Iteration: 3
+SVM accuracy: 0.7, MSE: 0.3, AUC SVM: 0.5132583366813982
+SVM accuracy: 0.7, MSE: 0.3, AUC SVM: 0.5132583366813982
+Iteration: 4
+SVM accuracy: 0.14055555555555554, MSE: 0.8594444444444445, AUC SVM: 0.49771120377084843
+SVM accuracy: 0.14055555555555554, MSE: 0.8594444444444445, AUC SVM: 0.49771120377084843
+Iteration: 5
+SVM accuracy: 0.2238888888888889, MSE: 0.7761111111111111, AUC SVM: 0.48077323986335296
+SVM accuracy: 0.2238888888888889, MSE: 0.7761111111111111, AUC SVM: 0.48077323986335296
+Iteration: 6
+SVM accuracy: 0.1661111111111111, MSE: 0.8338888888888889, AUC SVM: 0.49714505887605176
+SVM accuracy: 0.1661111111111111, MSE: 0.8338888888888889, AUC SVM: 0.49714505887605176
+Iteration: 7
+SVM accuracy: 0.4033333333333333, MSE: 0.5966666666666667, AUC SVM: 0.48014959723820483
+SVM accuracy: 0.4033333333333333, MSE: 0.5966666666666667, AUC SVM: 0.48014959723820483
+Iteration: 8
+SVM accuracy: 0.8061111111111111, MSE: 0.1938888888888889, AUC SVM: 0.5045063026391247
+SVM accuracy: 0.8061111111111111, MSE: 0.1938888888888889, AUC SVM: 0.5045063026391247
+Iteration: 9
+SVM accuracy: 0.7616666666666667, MSE: 0.23833333333333334, AUC SVM: 0.5182636388811963
+SVM accuracy: 0.7616666666666667, MSE: 0.23833333333333334, AUC SVM: 0.5182636388811963
+Serializing support vector machine...
+Iteration: 0
+SVM accuracy: 0.8705555555555555, MSE: 0.12944444444444445, AUC SVM: 0.5006796124787088
+SVM accuracy: 0.8705555555555555, MSE: 0.12944444444444445, AUC SVM: 0.5006796124787088
+Test score: 0.5349999999999999, training score: 0.5345555555555556
+Training SVM model for TF
+Training... TF
+x shape: (2000, 12)
+y shape: (2000, 1)
+200
+SVCParameters { epoch: 2, c: 1.0, tol: 0.001, kernel: LinearKernel, m: PhantomData }
+SVCParameters { epoch: 2, c: 2000.0, tol: 0.0001, kernel: LinearKernel, m: PhantomData }
+Iteration: 1
+SVM accuracy: 0.49277777777777776, MSE: 0.5072222222222222, AUC SVM: 0.5092785249304331
+SVM accuracy: 0.49277777777777776, MSE: 0.5072222222222222, AUC SVM: 0.5092785249304331
+Iteration: 2
+SVM accuracy: 0.5616666666666666, MSE: 0.43833333333333335, AUC SVM: 0.49713268960514984
+SVM accuracy: 0.5616666666666666, MSE: 0.43833333333333335, AUC SVM: 0.49713268960514984
+Iteration: 3
+SVM accuracy: 0.5033333333333333, MSE: 0.49666666666666665, AUC SVM: 0.4998787443188886
+SVM accuracy: 0.5033333333333333, MSE: 0.49666666666666665, AUC SVM: 0.4998787443188886
+Iteration: 4
+SVM accuracy: 0.535, MSE: 0.465, AUC SVM: 0.5004147812971342
+SVM accuracy: 0.535, MSE: 0.465, AUC SVM: 0.5004147812971342
+Iteration: 5
+SVM accuracy: 0.4494444444444444, MSE: 0.5505555555555556, AUC SVM: 0.496906024751802
+SVM accuracy: 0.4494444444444444, MSE: 0.5505555555555556, AUC SVM: 0.496906024751802
+Iteration: 6
+SVM accuracy: 0.4483333333333333, MSE: 0.5516666666666666, AUC SVM: 0.5057686205177025
+SVM accuracy: 0.4483333333333333, MSE: 0.5516666666666666, AUC SVM: 0.5057686205177025
+Iteration: 7
+SVM accuracy: 0.5038888888888889, MSE: 0.4961111111111111, AUC SVM: 0.49890648567119156
+SVM accuracy: 0.5038888888888889, MSE: 0.4961111111111111, AUC SVM: 0.49890648567119156
+Iteration: 8
+SVM accuracy: 0.5205555555555555, MSE: 0.47944444444444445, AUC SVM: 0.5032776138970829
+SVM accuracy: 0.5205555555555555, MSE: 0.47944444444444445, AUC SVM: 0.5032776138970829
+Iteration: 9
+SVM accuracy: 0.5661111111111111, MSE: 0.4338888888888889, AUC SVM: 0.5049867608120036
+SVM accuracy: 0.5661111111111111, MSE: 0.4338888888888889, AUC SVM: 0.5049867608120036
+Serializing support vector machine...
+Iteration: 0
+SVM accuracy: 0.5283333333333333, MSE: 0.4716666666666667, AUC SVM: 0.49203895017802507
+SVM accuracy: 0.5283333333333333, MSE: 0.4716666666666667, AUC SVM: 0.49203895017802507
+Test score: 0.5055, training score: 0.5109444444444444
+Training SVM model for JP
+Training... JP
+x shape: (2000, 12)
+y shape: (2000, 1)
+200
+SVCParameters { epoch: 2, c: 1.0, tol: 0.001, kernel: LinearKernel, m: PhantomData }
+SVCParameters { epoch: 2, c: 2000.0, tol: 0.0001, kernel: LinearKernel, m: PhantomData }
+Iteration: 1
+SVM accuracy: 0.46055555555555555, MSE: 0.5394444444444444, AUC SVM: 0.49739328937155664
+SVM accuracy: 0.46055555555555555, MSE: 0.5394444444444444, AUC SVM: 0.49739328937155664
+Iteration: 2
+SVM accuracy: 0.5827777777777777, MSE: 0.4172222222222222, AUC SVM: 0.5203366864177116
+SVM accuracy: 0.5827777777777777, MSE: 0.4172222222222222, AUC SVM: 0.5203366864177116
+Iteration: 3
+SVM accuracy: 0.45944444444444443, MSE: 0.5405555555555556, AUC SVM: 0.5080037664783428
+SVM accuracy: 0.45944444444444443, MSE: 0.5405555555555556, AUC SVM: 0.5080037664783428
+Iteration: 4
+SVM accuracy: 0.44555555555555554, MSE: 0.5544444444444444, AUC SVM: 0.48971257369088805
+SVM accuracy: 0.44555555555555554, MSE: 0.5544444444444444, AUC SVM: 0.48971257369088805
+Iteration: 5
+SVM accuracy: 0.4661111111111111, MSE: 0.5338888888888889, AUC SVM: 0.5221191250234568
+SVM accuracy: 0.4661111111111111, MSE: 0.5338888888888889, AUC SVM: 0.5221191250234568
+Iteration: 6
+SVM accuracy: 0.5111111111111111, MSE: 0.4888888888888889, AUC SVM: 0.4912829937577236
+SVM accuracy: 0.5111111111111111, MSE: 0.4888888888888889, AUC SVM: 0.4912829937577236
+Iteration: 7
+SVM accuracy: 0.46055555555555555, MSE: 0.5394444444444444, AUC SVM: 0.5028980672336318
+SVM accuracy: 0.46055555555555555, MSE: 0.5394444444444444, AUC SVM: 0.5028980672336318
+Iteration: 8
+SVM accuracy: 0.5355555555555556, MSE: 0.46444444444444444, AUC SVM: 0.5036788121818617
+SVM accuracy: 0.5355555555555556, MSE: 0.46444444444444444, AUC SVM: 0.5036788121818617
+Iteration: 9
+SVM accuracy: 0.5311111111111111, MSE: 0.4688888888888889, AUC SVM: 0.49979546818670123
+SVM accuracy: 0.5311111111111111, MSE: 0.4688888888888889, AUC SVM: 0.49979546818670123
+Serializing support vector machine...
+Iteration: 0
+SVM accuracy: 0.4438888888888889, MSE: 0.5561111111111111, AUC SVM: 0.5004358247984311
+SVM accuracy: 0.4438888888888889, MSE: 0.5561111111111111, AUC SVM: 0.5004358247984311
+Test score: 0.491, training score: 0.48966666666666664
+IE accuracy: 0.3375
+MSE: 0.6625
+NS accuracy: 0.8575
+MSE: 0.1425
+TF accuracy: 0.56
+MSE: 0.44
+JP accuracy: 0.43
+MSE: 0.57
+Generic Random Forest accuracy: 0.21629077353215284
+Prediction, Actual, Variance, Mean Variance, Correct
+INFP,       INTJ,   0.50,     0.70           false
+INFP,       INTJ,   0.50,     0.70           false
+INFP,       INFP,   1.00,     0.70           true
+INFP,       INFP,   1.00,     0.70           true
+INFP,       ISFJ,   0.50,     0.70           false
+INFP,       INFJ,   0.75,     0.70           false
+INFP,       ENTP,   0.50,     0.70           false
+INFP,       INFP,   1.00,     0.70           true
+INFP,       INFJ,   0.75,     0.70           false
+INFP,       ESTJ,   0.00,     0.70           false
+INFP,       INFJ,   0.75,     0.70           false
+INFP,       ENTP,   0.50,     0.70           false
+INFP,       INFP,   1.00,     0.70           true
+INFP,       INFJ,   0.75,     0.70           false
+INFP,       ISTJ,   0.25,     0.70           false
+INFP,       INTJ,   0.50,     0.70           false
+INFP,       INTJ,   0.50,     0.70           false
+INFP,       ENTP,   0.50,     0.70           false
+INFP,       INTJ,   0.50,     0.70           false
+INFP,       INTJ,   0.50,     0.70           false
+INFP,       ENTP,   0.50,     0.70           false
+INFP,       INFP,   1.00,     0.70           true
+INFP,       INTP,   0.75,     0.70           false
+INFP,       INFJ,   0.75,     0.70           false
+INFP,       ISTJ,   0.25,     0.70           false
+Ensemble Support Vector Machine accuracy: 0.0775
+MSE: 3039.82
+Prediction, Actual, Variance, Mean Variance, Correct
+ENFP,       INFP,   0.75,     0.55           false
+ENTJ,       INTP,   0.50,     0.55           false
+ENFJ,       INFJ,   0.75,     0.55           false
+ENFJ,       INFJ,   0.75,     0.55           false
+ENFJ,       INTJ,   0.50,     0.55           false
+ENFJ,       ENFJ,   1.00,     0.55           true
+ENFP,       INTP,   0.50,     0.55           false
+ENFJ,       INFP,   0.50,     0.55           false
+INFJ,       ENTP,   0.25,     0.55           false
+INFJ,       INFJ,   1.00,     0.55           true
+ENFP,       INTJ,   0.25,     0.55           false
+ENFP,       INTJ,   0.25,     0.55           false
+INFJ,       INTP,   0.50,     0.55           false
+INFJ,       INFP,   0.75,     0.55           false
+ENFP,       INTP,   0.50,     0.55           false
+ENFJ,       INFP,   0.50,     0.55           false
+ENTJ,       INTP,   0.50,     0.55           false
+ENTP,       INFP,   0.50,     0.55           false
+ENFP,       INFP,   0.75,     0.55           false
+ENFP,       INTJ,   0.25,     0.55           false
+ENFP,       INFP,   0.75,     0.55           false
+INFJ,       ESFJ,   0.50,     0.55           false
+ENFJ,       INTP,   0.25,     0.55           false
+ENFP,       INFJ,   0.50,     0.55           false
+ENFJ,       ENFP,   0.75,     0.55           false

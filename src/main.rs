@@ -4,13 +4,13 @@ use rand::thread_rng;
 // use rand::Rng;
 // use rust_bert::pipelines::pos_tagging::POSConfig;
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use smartcore::svm::svc::{SVCParameters, SVC};
 use smartcore::svm::{Kernels, LinearKernel};
 use smartcore::tree::decision_tree_classifier::SplitCriterion;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{Read, Write};
-use serde_json::{Map, Value};
 use std::path::Path;
 use std::time::Instant;
 // DenseMatrix wrapper around Vec
@@ -23,12 +23,12 @@ use smartcore::ensemble::random_forest_classifier::{
 use nalgebra::{DMatrix, DMatrixSlice};
 use regex::Regex;
 // use rust_bert::pipelines::pos_tagging::{POSModel, POSTag};
+use rust_decimal::prelude::*;
 use rust_stemmers::{Algorithm, Stemmer};
 use smartcore::metrics::{accuracy, mean_squared_error, roc_auc_score};
 use smartcore::model_selection::{cross_validate, train_test_split, KFold};
 use stopwords::{Language, Spark, Stopwords};
 use vtext::tokenize::*;
-use rust_decimal::prelude::*;
 
 // Stop words borrowed from analysis by github.com/riskmakov/MBTI-predictor
 const ENNEAGRAM_TERMS: [&str; 23] = [
@@ -179,7 +179,7 @@ type Post = Vec<String>;
 type Lemmas = Vec<String>;
 type Dictionary = HashMap<String, f64>;
 // type POSDictionary = HashMap<String, String>;
-type Features = (f64, f64);
+type Features = f64;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Sample {
@@ -357,18 +357,31 @@ fn load_data() -> Vec<Sample> {
                 match row {
                     Ok(row) => {
                         // Split each row on the delimiter "|||" and collect into a vector
-                        for post_str in row.posts.split("|||") {
-                            // Turn a string into a vector of lematized tokens.  @see tokenize
-                            let lemmas: Lemmas = tokenize(post_str, &expressions);
-                            if lemmas.len() > 0 {
-                                // println!("{}: {}", &row.r#type, tokens.join(" "));
-                                let sample: Sample = Sample {
-                                    label: MBTI::from_string(&row.r#type),
-                                    lemmas,
-                                };
-                                samples.push(sample)
-                            }
-                        }
+                        let sample_row: Vec<Sample> = row
+                            .posts
+                            .split("|||")
+                            .map(|post| Sample {
+                                lemmas: tokenize(post, &expressions),
+                                label: MBTI::from_string(&row.r#type),
+                            })
+                            .collect();
+                        samples.extend(sample_row);
+                        // Create a new sample with the lemmas and the label from a subset size 150.
+                        // let mut subset: Vec<Sample> = Vec::new();
+                        // let mut lemma_subset: Vec<String> = Vec::new();
+                        // for (i, lemma) in lemmas.iter().enumerate() {
+                        //     lemma_subset.push(lemma.clone());
+                        //     if (i + 1) % 150 == 0 {
+                        //         assert_eq!(lemma_subset.len(), 150);
+                        //         let sub = lemma_subset.clone();
+                        //         lemma_subset = Vec::new();
+                        //         subset.push(Sample {
+                        //             lemmas: sub,
+                        //             label: MBTI::from_string(&row.r#type),
+                        //         });
+                        //     }
+                        // }
+                        // samples.append(&mut subset);
                     }
                     Err(e) => println!("Error: {}", e),
                 }
@@ -628,8 +641,8 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                         if !dictionary.contains_key(&token.to_string()) {
                             dictionary.insert(token.to_string(), dictionary.len() as f64);
                             // if output[j].len() > 0 {
-                                // pos.insert(token.to_string(), output[j][0].label.to_string());
-                                // pos_score.insert(output[j][0].label.to_string(), pos_score.len() as f64);
+                            // pos.insert(token.to_string(), output[j][0].label.to_string());
+                            // pos_score.insert(output[j][0].label.to_string(), pos_score.len() as f64);
                             // }
                         }
                     }
@@ -638,22 +651,22 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                     });
                 }
                 let personality_freq: [Dictionary; 16] = [
-                    esfj_freq,
-                    esfp_freq,
-                    estj_freq,
-                    estp_freq,
-                    enfj_freq,
-                    enfp_freq,
-                    entj_freq,
-                    entp_freq,
-                    isfj_freq,
-                    isfp_freq,
-                    istj_freq,
-                    istp_freq,
-                    infj_freq,
-                    infp_freq,
-                    intj_freq,
-                    intp_freq,
+                    esfj_freq, // 0
+                    esfp_freq, // 1
+                    estj_freq, // 2
+                    estp_freq, // 3
+                    enfj_freq, // 4
+                    enfp_freq, // 5
+                    entj_freq, // 6
+                    entp_freq, // 7
+                    isfj_freq, // 8
+                    isfp_freq, // 9
+                    istj_freq, // 10
+                    istp_freq, // 11
+                    infj_freq, // 12
+                    infp_freq, // 13
+                    intj_freq, // 14
+                    intp_freq, // 15
                 ];
                 // Serialize the dictionary.
                 println!("Saving dictionary...");
@@ -854,49 +867,46 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                 let tf_idf: DMatrix<Features> =
                     DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| -> Features {
                         let score: f64 = (tf_matrix[i][j] * idf_matrix[i][j]) as f64;
-                        if score > 5.0 {
-                            println!("Score: {} unexpectedly high with term {}.", score, corpus[(i, j)]);
-                        }
-                        (score, dictionary[&corpus[(i, j)]])
+                        score
                     });
                 // Normalizing makes the values too tiny.
                 // let max = tf_idf.max();
                 // let tf_idf_normal: DMatrix<f64> = DMatrix::from_fn(tf_idf.nrows(), tf_idf.ncols(), |i, j| tf_idf[(i, j)] / max);
                 println!("tf_idf: {} seconds", start.elapsed().as_secs());
                 // Convert tf_idf to a Vec<Vec<f64>>.
-                let df1: DMatrix<f64> = DMatrix::from_fn(tf_idf.nrows(), tf_idf.ncols(), |i, j| tf_idf[(i, j)].0);
-                let max = df1.max();
-                let min = df1.min();
+                let max = tf_idf.max();
+                let min = tf_idf.min();
                 println!("max: {}", max);
                 println!("min: {}", min);
-                let tf_idf_normal: DMatrix<f64> = DMatrix::from_fn(tf_idf.nrows(), tf_idf.ncols(), |i, j| df1[(i, j)] / max);
-                let df2: DMatrix<f64> = DMatrix::from_fn(tf_idf.nrows(), tf_idf.ncols(), |i, j| tf_idf[(i, j)].1 / dictionary.len() as f64);
+                let _tf_idf_normal: DMatrix<f64> =
+                    DMatrix::from_fn(tf_idf.nrows(), tf_idf.ncols(), |i, j| tf_idf[(i, j)] / max);
+                // let df2: DMatrix<f64> = DMatrix::from_fn(tf_idf.nrows(), tf_idf.ncols(), |i, j| tf_idf[(i, j)].1 / dictionary.len() as f64);
                 // let df3: DMatrix<f64> = DMatrix::from_fn(tf_idf.nrows(), tf_idf.ncols(), |i, j| tf_idf[(i, j)].2);
                 // let grid: [DMatrix<f64>; 3] = [df1, df2, df3];
 
-                let mut corpus_tf_idf: Vec<Vec<f64>> = Vec::new();
-                for i in 0..df1.nrows() {
-                    let mut row: Vec<f64> = Vec::new();
-                    for y in 0..12 {
-                        for x in 0..12 {
-                            let height: f64 = 12.0 - y as f64;
-                            let freq: f64 = df1[(i, x)];
-                            let size: f64 = 12.0;
-                            let _d_height: Decimal = Decimal::from_f64(height).unwrap();
-                            let _d_freq: Decimal = Decimal::from_f64(tf_idf_normal[(i, x)]).unwrap();
-                            let _id: f64 = df2[(i, x)];
-                            assert!(max < size);
-                            if height >= 0.0 && freq * max > height {
-                                row.push(1.0);
-                            }
-                            else {
-                                row.push(0.0);
-                            }
-                        }
-                    }
-                    assert_eq!(row.len(), 144);
-                    corpus_tf_idf.push(row);
-                }
+                // let mut corpus_tf_idf: Vec<Vec<f64>> = Vec::new();
+                // for i in 0..df1.nrows() {
+                //     let mut row: Vec<f64> = Vec::new();
+                //     for y in 0..12 {
+                //         for x in 0..12 {
+                //             let height: f64 = 12.0 - y as f64;
+                //             let freq: f64 = df1[(i, x)];
+                //             let size: f64 = 12.0;
+                //             let _d_height: Decimal = Decimal::from_f64(height).unwrap();
+                //             let _d_freq: Decimal = Decimal::from_f64(tf_idf_normal[(i, x)]).unwrap();
+                //             let _id: f64 = df2[(i, x)];
+                //             assert!(max < size);
+                //             if height >= 0.0 && freq * max > height {
+                //                 row.push(1.0);
+                //             }
+                //             else {
+                //                 row.push(0.0);
+                //             }
+                //         }
+                //     }
+                //     assert_eq!(row.len(), 144);
+                //     corpus_tf_idf.push(row);
+                // }
 
                 // Calculate a grid graphed image of the frequency at which each personality type's
                 // common terms appear in the document based on the corpus frequency of the word
@@ -918,19 +928,26 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                     let overall: DMatrix<f64>;
                     if !path_overall.exists() {
                         println!("Creating overall...");
-                        overall = DMatrix::from_fn(corpus.nrows(), 16, |i, j| {
-                            if i % 25000 == 0 {
-                                println!("overall: {} of {}", i, corpus.nrows());
-                            }
-                            corpus.row(i).iter().fold(0.0, |mut acc: f64, term| {
-                                let mut val: f64 = 0.0;
-                                if personality_freq[j].contains_key(term) {
-                                    val = personality_freq[j][term];
+                        overall =
+                            DMatrix::from_fn(corpus.nrows(), 16, |i, j| {
+                                if i + 1 % 25000 == 0 {
+                                    println!("overall: {} of {}", i, corpus.nrows());
                                 }
-                                acc += (val / overall_freq[term]) as f64;
-                                acc
-                            }) / corpus.ncols() as f64
-                        });
+                                corpus.row(i).iter().enumerate().fold(
+                                    0.0,
+                                    |mut acc: f64, (n, term)| {
+                                        let mut val: f64 = 0.0;
+                                        if personality_freq[j].contains_key(term) {
+                                            val = personality_freq[j][term];
+                                        }
+                                        // TODO We are trying to incorporate term frequency here.
+                                        // acc += (val / overall_freq[term]) as f64 * tf_idf[(i, n)];
+                                        // df1 is the score where tf-idf is the score and term id in a tuple
+                                        acc += ((val / overall_freq[term]) * tf_idf[(i, n)]) as f64;
+                                        acc
+                                    },
+                                ) / corpus.ncols() as f64
+                            });
                         let mut obj: Vec<Vec<f64>> = Vec::new();
                         for i in 0..overall.nrows() {
                             let mut row: Vec<f64> = Vec::new();
@@ -942,10 +959,10 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                         println!("Saving overall frequencies for each classification...");
                         let overall_bytes = bincode::serialize(&obj).unwrap();
                         let mut f = File::create(path_overall).unwrap();
-                        f.write_all(&overall_bytes).expect("Failed to write overall");
+                        f.write_all(&overall_bytes)
+                            .expect("Failed to write overall");
                         println!("Saved overall frequencies for each classification.");
-                    }
-                    else {
+                    } else {
                         println!("Loading overall frequencies for each classification...");
                         let mut buf = Vec::new();
                         File::open(path_overall)
@@ -956,7 +973,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                         overall = DMatrix::from_fn(obj.len(), obj[0].len(), |i, j| obj[i][j]);
                     }
                     let overall_terms = DMatrix::from_fn(corpus.nrows(), corpus.ncols(), |i, j| {
-                        if i % 25000 == 0 {
+                        if i + 1 % 25000 == 0 {
                             println!("overall_terms: {} of {}", i, corpus.nrows());
                         }
                         let term = &corpus[(i, j)];
@@ -965,8 +982,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                         for x in 0..16 {
                             if personality_freq[x].contains_key(term) {
                                 val[x] = (personality_freq[x][term] / overall_freq[term]) as f64;
-                            }
-                            else {
+                            } else {
                                 val[x] = 0.0;
                             }
                         }
@@ -997,6 +1013,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                         heatmap = Vec::new();
                         let max_overall = overall.max();
                         for i in 0..corpus.nrows() {
+                            let mut maxes: [f64; 4] = [0.0; 4];
                             let _image16: DMatrix<f64> = DMatrix::from_fn(16, 16, |y, x| {
                                 let n: usize;
                                 // The first personality type, ESFJ, is the first 16 bits.
@@ -1134,175 +1151,225 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                             });
                             let image8: DMatrix<f64> = DMatrix::from_fn(16, 16, |y, x| {
                                 let mut avg: f64 = 0.0;
-                                // The first 32 bits rectangle (4x8) is the indicator I.
-                                // [(0,0), (0,1), (0,2), (0,3),
-                                //  (1,0), (1,1), (1,2), (1,3),
-                                //  (2,0), (2,1), (2,2), (2,3),
-                                //  (3,0), (3,1), (3,2), (3,3),
-                                //  (4,0), (4,1), (4,2), (4,3),
-                                //  (5,0), (5,1), (5,2), (5,3),
-                                //  (6,0), (6,1), (6,2), (6,3),
-                                //  (7,0), (7,1), (7,2), (7,3)]
-                                if x <= 7 && y <= 3 {
-                                    let isfj = overall[(i, 8)] / max_overall;
-                                    let isfp = overall[(i, 9)] / max_overall;
-                                    let istj = overall[(i, 10)] / max_overall;
-                                    let istp = overall[(i, 11)] / max_overall;
-                                    let infj = overall[(i, 12)] / max_overall;
-                                    let infp = overall[(i, 13)] / max_overall;
-                                    let intj = overall[(i, 14)] / max_overall;
-                                    let intp = overall[(i, 15)] / max_overall;
-                                    avg = (isfj + isfp + istj + istp + infj + infp + intj + intp) / 8.0;
+                                let n: usize;
+                                // Alternate x and y values in each quadrant to improve readability.
+                                // The first 64 bits rectangle (8x8) is the indicator IE.
+                                // [(0,0), (0,1), (0,2), (0,3), (0,4), (0,5), (0,6), (0,7),
+                                //  (1,0), (1,1), (1,2), (1,3), (1,4), (1,5), (1,6), (1,7),
+                                //  (2,0), (2,1), (2,2), (2,3), (2,4), (2,5), (2,6), (2,7),
+                                //  (3,0), (3,1), (3,2), (3,3), (3,4), (3,5), (3,6), (3,7),
+                                //  (4,0), (4,1), (4,2), (4,3), (4,4), (4,5), (4,6), (4,7),
+                                //  (5,0), (5,1), (5,2), (5,3), (5,4), (5,5), (5,6), (5,7),
+                                //  (6,0), (6,1), (6,2), (6,3), (6,4), (6,5), (6,6), (6,7),
+                                //  (7,0), (7,1), (7,2), (7,3), (7,4), (7,5), (7,6), (7,7)]
+                                // First do [(0,0), (7,3)].
+                                // The first 32 bits rectangle (8x4) is the indicator I.
+                                if x <= 3 && y <= 7 {
+                                    let i_index = [8, 9, 10, 11, 12, 13, 14, 15];
+                                    for delta in i_index.iter() {
+                                        avg += overall[(i, *delta)] / max_overall;
+                                    }
+                                    avg /= 8.0;
+                                    n = 0;
+                                    if avg > maxes[n] {
+                                        maxes[n] = avg;
+                                    }
                                 }
-                                // The second 32 bits rectangle (4x8) is the indicator E.
-                                // [(0,4), (0,5), (0,6), (0,7),
-                                //  (1,4), (1,5), (1,6), (1,7),
-                                //  (2,4), (2,5), (2,6), (2,7),
-                                //  (3,4), (3,5), (3,6), (3,7),
-                                //  (4,4), (4,5), (4,6), (4,7),
-                                //  (5,4), (5,5), (5,6), (5,7),
-                                //  (6,4), (6,5), (6,6), (6,7),
-                                //  (7,4), (7,5), (7,6), (7,7)]
+                                // Then do [(0,4), (7,7)].
+                                // The second 32 bits rectangle (8x4) is the indicator E.
                                 else if x >= 4 && x <= 7 && y <= 7 {
-                                    let esfj = overall[(i, 8)] / max_overall;
-                                    let esfp = overall[(i, 9)] / max_overall;
-                                    let estj = overall[(i, 10)] / max_overall;
-                                    let estp = overall[(i, 11)] / max_overall;
-                                    let enfj = overall[(i, 12)] / max_overall;
-                                    let enfp = overall[(i, 13)] / max_overall;
-                                    let entj = overall[(i, 14)] / max_overall;
-                                    let entp = overall[(i, 15)] / max_overall;
-                                    avg = (esfj + esfp + estj + estp + enfj + enfp + entj + entp) / 8.0;
+                                    let e_index = [0, 1, 2, 3, 4, 5, 6, 7];
+                                    for delta in e_index.iter() {
+                                        avg += overall[(i, *delta)] / max_overall;
+                                    }
+                                    avg /= 8.0;
+                                    let n = 0;
+                                    if avg > maxes[n] {
+                                        maxes[n] = avg;
+                                    }
                                 }
+                                // The second 64 bits rectangle (8x8) is the indicator SN.
+                                // [(0,8), (0,9), (0,10), (0,11), (0,12), (0,13), (0,14), (0,15),
+                                //  (1,8), (1,9), (1,10), (1,11), (1,12), (1,13), (1,14), (1,15),
+                                //  (2,8), (2,9), (2,10), (2,11), (2,12), (2,13), (2,14), (2,15),
+                                //  (3,8), (3,9), (3,10), (3,11), (3,12), (3,13), (3,14), (3,15),
+                                //  (4,8), (4,9), (4,10), (4,11), (4,12), (4,13), (4,14), (4,15),
+                                //  (5,8), (5,9), (5,10), (5,11), (5,12), (5,13), (5,14), (5,15),
+                                //  (6,8), (6,9), (6,10), (6,11), (6,12), (6,13), (6,14), (6,15),
+                                //  (7,8), (7,9), (7,10), (7,11), (7,12), (7,13), (7,14), (7,15)]
+                                // First do [(0,8), (3,15)].
                                 // The third 32 bits rectangle (4x8) is the indicator S.
-                                // [(0,8), (0,9), (0,10), (0,11),
-                                //  (1,8), (1,9), (1,10), (1,11),
-                                //  (2,8), (2,9), (2,10), (2,11),
-                                //  (3,8), (3,9), (3,10), (3,11),
-                                //  (4,8), (4,9), (4,10), (4,11),
-                                //  (5,8), (5,9), (5,10), (5,11),
-                                //  (6,8), (6,9), (6,10), (6,11),
-                                //  (7,8), (7,9), (7,10), (7,11)]
-                                else if x >= 8 && x <= 11 && y <= 11 {
-                                    let isfj = overall[(i, 8)] / max_overall;
-                                    let isfp = overall[(i, 9)] / max_overall;
-                                    let istj = overall[(i, 10)] / max_overall;
-                                    let istp = overall[(i, 11)] / max_overall;
-                                    let esfj = overall[(i, 8)] / max_overall;
-                                    let esfp = overall[(i, 9)] / max_overall;
-                                    let estj = overall[(i, 10)] / max_overall;
-                                    let estp = overall[(i, 11)] / max_overall;
-                                    avg = (isfj + isfp + istj + istp + esfj + esfp + estj + estp) / 8.0;
+                                else if x >= 8 && x <= 15 && y <= 3 {
+                                    let s_index = [0, 1, 2, 3, 8, 9, 10, 11];
+                                    for delta in s_index.iter() {
+                                        avg += overall[(i, *delta)] / max_overall;
+                                    }
+                                    avg /= 8.0;
+                                    let n = 1;
+                                    if avg > maxes[n] {
+                                        maxes[n] = avg;
+                                    }
                                 }
+                                // Then do [(4,8), (7,15)].
                                 // The fourth 32 bits rectangle (4x8) is the indicator N.
-                                // [(0,12), (0,13), (0,14), (0,15),
-                                //  (1,12), (1,13), (1,14), (1,15),
-                                //  (2,12), (2,13), (2,14), (2,15),
-                                //  (3,12), (3,13), (3,14), (3,15),
-                                //  (4,12), (4,13), (4,14), (4,15),
-                                //  (5,12), (5,13), (5,14), (5,15),
-                                //  (6,12), (6,13), (6,14), (6,15),
-                                //  (7,12), (7,13), (7,14), (7,15)]
-                                else if x >= 12 && x <= 15 && y <= 15 {
-                                    let infj = overall[(i, 12)] / max_overall;
-                                    let infp = overall[(i, 13)] / max_overall;
-                                    let intj = overall[(i, 14)] / max_overall;
-                                    let intp = overall[(i, 15)] / max_overall;
-                                    let enfj = overall[(i, 12)] / max_overall;
-                                    let enfp = overall[(i, 13)] / max_overall;
-                                    let entj = overall[(i, 14)] / max_overall;
-                                    let entp = overall[(i, 15)] / max_overall;
-                                    avg = (infj + infp + intj + intp + enfj + enfp + entj + entp) / 8.0;
+                                else if x >= 8 && x <= 15 && y >= 4 && y <= 7 {
+                                    let n_index = [4, 5, 6, 7, 12, 13, 14, 15];
+                                    for delta in n_index.iter() {
+                                        avg += overall[(i, *delta)] / max_overall;
+                                    }
+                                    avg /= 16.0;
+                                    let n = 1;
+                                    if avg > maxes[n] {
+                                        maxes[n] = avg;
+                                    }
                                 }
-                                // The fifth 32 bits rectangle (4x8) is the indicator T.
-                                // [(8,0), (8,1), (8,2), (8,3),
-                                //  (9,0), (9,1), (9,2), (9,3),
-                                //  (10,0), (10,1), (10,2), (10,3),
-                                //  (11,0), (11,1), (11,2), (11,3),
-                                //  (12,0), (12,1), (12,2), (12,3),
-                                //  (13,0), (13,1), (13,2), (13,3),
-                                //  (14,0), (14,1), (14,2), (14,3),
-                                //  (15,0), (15,1), (15,2), (15,3)]
-                                else if x <= 3 && y >= 8 && y <= 11 {
-                                    let istj = overall[(i, 10)] / max_overall;
-                                    let istp = overall[(i, 11)] / max_overall;
-                                    let intj = overall[(i, 14)] / max_overall;
-                                    let intp = overall[(i, 15)] / max_overall;
-                                    let estj = overall[(i, 10)] / max_overall;
-                                    let estp = overall[(i, 11)] / max_overall;
-                                    let entj = overall[(i, 14)] / max_overall;
-                                    let entp = overall[(i, 15)] / max_overall;
-                                    avg = (istj + istp + intj + intp + estj + estp + entj + entp) / 8.0;
+                                // The third 64 bits rectangle (8x8) is the indicator TF.
+                                // [(8,0), (8,1), (8,2), (8,3), (8,4), (8,5), (8,6), (8,7),
+                                //  (9,0), (9,1), (9,2), (9,3), (9,4), (9,5), (9,6), (9,7),
+                                //  (10,0), (10,1), (10,2), (10,3), (10,4), (10,5), (10,6), (10,7),
+                                //  (11,0), (11,1), (11,2), (11,3), (11,4), (11,5), (11,6), (11,7),
+                                //  (12,0), (12,1), (12,2), (12,3), (12,4), (12,5), (12,6), (12,7),
+                                //  (13,0), (13,1), (13,2), (13,3), (13,4), (13,5), (13,6), (13,7),
+                                //  (14,0), (14,1), (14,2), (14,3), (14,4), (14,5), (14,6), (14,7),
+                                //  (15,0), (15,1), (15,2), (15,3), (15,4), (15,5), (15,6), (15,7)]
+                                // First do [(8,0), (11,7)].
+                                // The fifth 32 bits rectangle (8x4) is the indicator T.
+                                else if x <= 7 && y >= 8 && y <= 11 {
+                                    let t_index = [2, 3, 6, 7, 10, 11, 14, 15];
+                                    for delta in t_index.iter() {
+                                        avg += overall[(i, *delta)] / max_overall;
+                                    }
+                                    avg /= 8.0;
+                                    let n = 2;
+                                    if avg > maxes[n] {
+                                        maxes[n] = avg;
+                                    }
                                 }
-                                // The sixth 32 bits rectangle (4x8) is the indicator F.
-                                // [(8,4), (8,5), (8,6), (8,7),
-                                //  (9,4), (9,5), (9,6), (9,7),
-                                //  (10,4), (10,5), (10,6), (10,7),
-                                //  (11,4), (11,5), (11,6), (11,7),
-                                //  (12,4), (12,5), (12,6), (12,7),
-                                //  (13,4), (13,5), (13,6), (13,7),
-                                //  (14,4), (14,5), (14,6), (14,7),
-                                //  (15,4), (15,5), (15,6), (15,7)]
-                                else if x >= 4 && x <= 7 && y >= 8 && y <= 11 {
-                                    let isfj = overall[(i, 8)] / max_overall;
-                                    let isfp = overall[(i, 9)] / max_overall;
-                                    let infj = overall[(i, 12)] / max_overall;
-                                    let infp = overall[(i, 13)] / max_overall;
-                                    let esfj = overall[(i, 8)] / max_overall;
-                                    let esfp = overall[(i, 9)] / max_overall;
-                                    let enfj = overall[(i, 12)] / max_overall;
-                                    let enfp = overall[(i, 13)] / max_overall;
-                                    avg = (isfj + isfp + infj + infp + esfj + esfp + enfj + enfp) / 8.0;
+                                // Then do [(12,0), (15,7)].
+                                // The sixth 32 bits rectangle (8x4) is the indicator F.
+                                else if x <= 7 && y >= 12 && y <= 15 {
+                                    let f_index = [0, 1, 4, 5, 8, 9, 12, 13];
+                                    for delta in f_index.iter() {
+                                        avg += overall[(i, *delta)] / max_overall;
+                                    }
+                                    avg /= 8.0;
+                                    let n = 2;
+                                    if avg > maxes[n] {
+                                        maxes[n] = avg;
+                                    }
                                 }
+                                // The fourth 64 bits square (8x8) is the indicator JP.
+                                // [(8,8), (8,9), (8,10), (8,11), (8,12), (8,13), (8,14), (8,15),
+                                //  (9,8), (9,9), (9,10), (9,11), (9,12), (9,13), (9,14), (9,15),
+                                //  (10,8), (10,9), (10,10), (10,11), (10,12), (10,13), (10,14), (10,15),
+                                //  (11,8), (11,9), (11,10), (11,11), (11,12), (11,13), (11,14), (11,15),
+                                //  (12,8), (12,9), (12,10), (12,11), (12,12), (12,13), (12,14), (12,15),
+                                //  (13,8), (13,9), (13,10), (13,11), (13,12), (13,13), (13,14), (13,15),
+                                //  (14,8), (14,9), (14,10), (14,11), (14,12), (14,13), (14,14), (14,15),
+                                //  (15,8), (15,9), (15,10), (15,11), (15,12), (15,13), (15,14), (15,15)]
+                                // First do [(8,8), (15,11)].
                                 // The seventh 32 bits rectangle (4x8) is the indicator J.
-                                // [(8,8), (8,9), (8,10), (8,11),
-                                //  (9,8), (9,9), (9,10), (9,11),
-                                //  (10,8), (10,9), (10,10), (10,11),
-                                //  (11,8), (11,9), (11,10), (11,11),
-                                //  (12,8), (12,9), (12,10), (12,11),
-                                //  (13,8), (13,9), (13,10), (13,11),
-                                //  (14,8), (14,9), (14,10), (14,11),
-                                //  (15,8), (15,9), (15,10), (15,11)]
-                                else if x >= 8 && x <= 11 && y >= 8 && y <= 11 {
-                                    let istj = overall[(i, 10)] / max_overall;
-                                    let istp = overall[(i, 11)] / max_overall;
-                                    let isfj = overall[(i, 8)] / max_overall;
-                                    let isfp = overall[(i, 9)] / max_overall;
-                                    let estj = overall[(i, 10)] / max_overall;
-                                    let estp = overall[(i, 11)] / max_overall;
-                                    let esfj = overall[(i, 8)] / max_overall;
-                                    let esfp = overall[(i, 9)] / max_overall;
-                                    avg = (istj + istp + isfj + isfp + estj + estp + esfj + esfp) / 8.0;
+                                else if x >= 8 && x <= 11 && y >= 8 && y <= 15 {
+                                    let j_index = [0, 2, 4, 6, 8, 10, 12, 14];
+                                    for delta in j_index.iter() {
+                                        avg += overall[(i, *delta)] / max_overall;
+                                    }
+                                    avg /= 8.0;
+                                    let n = 3;
+                                    if avg > maxes[n] {
+                                        maxes[n] = avg;
+                                    }
                                 }
+                                // Then do [(8, 12), (15,15)].
                                 // The eighth 32 bits rectangle (4x8) is the indicator P.
-                                // [(8,12), (8,13), (8,14), (8,15),
-                                //  (9,12), (9,13), (9,14), (9,15),
-                                //  (10,12), (10,13), (10,14), (10,15),
-                                //  (11,12), (11,13), (11,14), (11,15),
-                                //  (12,12), (12,13), (12,14), (12,15),
-                                //  (13,12), (13,13), (13,14), (13,15),
-                                //  (14,12), (14,13), (14,14), (14,15),
-                                //  (15,12), (15,13), (15,14), (15,15)]
-                                else if x >= 12 && x <= 15 && y >= 8 && y <= 11 {
-                                    let esfp = overall[(i, 9)] / max_overall;
-                                    let estp = overall[(i, 11)] / max_overall;
-                                    let enfp = overall[(i, 13)] / max_overall;
-                                    let entp = overall[(i, 15)] / max_overall;
-                                    let isfp = overall[(i, 9)] / max_overall;
-                                    let istp = overall[(i, 11)] / max_overall;
-                                    let infp = overall[(i, 13)] / max_overall;
-                                    let intp = overall[(i, 15)] / max_overall;
-                                    avg = (esfp + estp + enfp + entp + isfp + istp + infp + intp) / 8.0;
+                                else if x >= 12 && x <= 15 && y >= 8 && y <= 15 {
+                                    let p_index = [1, 3, 5, 7, 9, 11, 13, 15];
+                                    for delta in p_index.iter() {
+                                        avg += overall[(i, *delta)] / max_overall;
+                                    }
+                                    avg /= 8.0;
+                                    let n = 3;
+                                    if avg > maxes[n] {
+                                        maxes[n] = avg;
+                                    }
+                                } else {
+                                    panic!("Invalid coordinates: ({}, {})", x, y);
                                 }
                                 avg
                             });
 
+                            let soft_gradient = |x: f64, max: f64| -> f64 {
+                                if x == max {
+                                    1.0
+                                } else if x / max >= 0.77 {
+                                    0.77
+                                } else if x / max >= 0.33 {
+                                    0.33
+                                } else {
+                                    0.0
+                                }
+                            };
+
+                            let segment_normalized: DMatrix<f64> =
+                                DMatrix::from_fn(image8.nrows(), image8.ncols(), |y, x| {
+                                    let mut val: f64 = 0.0;
+                                    // The first 64 bits square (8x8) is the indicator IE.
+                                    // [(0,0), (0,1), (0,2), (0,3), (0,4), (0,5), (0,6), (0,7),
+                                    //  (1,0), (1,1), (1,2), (1,3), (1,4), (1,5), (1,6), (1,7),
+                                    //  (2,0), (2,1), (2,2), (2,3), (2,4), (2,5), (2,6), (2,7),
+                                    //  (3,0), (3,1), (3,2), (3,3), (3,4), (3,5), (3,6), (3,7),
+                                    //  (4,0), (4,1), (4,2), (4,3), (4,4), (4,5), (4,6), (4,7),
+                                    //  (5,0), (5,1), (5,2), (5,3), (5,4), (5,5), (5,6), (5,7),
+                                    //  (6,0), (6,1), (6,2), (6,3), (6,4), (6,5), (6,6), (6,7),
+                                    //  (7,0), (7,1), (7,2), (7,3), (7,4), (7,5), (7,6), (7,7)]
+                                    if x <= 7 && y <= 7 {
+                                        val = soft_gradient(image8[(y, x)], maxes[0]);
+                                    }
+                                    // The second 64 bits square (8x8) is the indicator NS.
+                                    // [(0,8), (0,9), (0,10), (0,11), (0,12), (0,13), (0,14), (0,15),
+                                    //  (1,8), (1,9), (1,10), (1,11), (1,12), (1,13), (1,14), (1,15),
+                                    //  (2,8), (2,9), (2,10), (2,11), (2,12), (2,13), (2,14), (2,15),
+                                    //  (3,8), (3,9), (3,10), (3,11), (3,12), (3,13), (3,14), (3,15),
+                                    //  (4,8), (4,9), (4,10), (4,11), (4,12), (4,13), (4,14), (4,15),
+                                    //  (5,8), (5,9), (5,10), (5,11), (5,12), (5,13), (5,14), (5,15),
+                                    //  (6,8), (6,9), (6,10), (6,11), (6,12), (6,13), (6,14), (6,15),
+                                    //  (7,8), (7,9), (7,10), (7,11), (7,12), (7,13), (7,14), (7,15)]
+                                    else if x >= 8 && y <= 7 {
+                                        val = soft_gradient(image8[(y, x)], maxes[1]);
+                                    }
+                                    // The third 64 bits square (8x8) is the indicator TF.
+                                    // [(8,0), (8,1), (8,2), (8,3), (8,4), (8,5), (8,6), (8,7),
+                                    //  (9,0), (9,1), (9,2), (9,3), (9,4), (9,5), (9,6), (9,7),
+                                    //  (10,0), (10,1), (10,2), (10,3), (10,4), (10,5), (10,6), (10,7),
+                                    //  (11,0), (11,1), (11,2), (11,3), (11,4), (11,5), (11,6), (11,7),
+                                    //  (12,0), (12,1), (12,2), (12,3), (12,4), (12,5), (12,6), (12,7),
+                                    //  (13,0), (13,1), (13,2), (13,3), (13,4), (13,5), (13,6), (13,7),
+                                    //  (14,0), (14,1), (14,2), (14,3), (14,4), (14,5), (14,6), (14,7),
+                                    //  (15,0), (15,1), (15,2), (15,3), (15,4), (15,5), (15,6), (15,7)]
+                                    else if x <= 7 && y >= 8 {
+                                        val = soft_gradient(image8[(y, x)], maxes[2]);
+                                    }
+                                    // The fourth 64 bits square (8x8) is the indicator JP.
+                                    // [(8,8), (8,9), (8,10), (8,11), (8,12), (8,13), (8,14), (8,15),
+                                    //  (9,8), (9,9), (9,10), (9,11), (9,12), (9,13), (9,14), (9,15),
+                                    //  (10,8), (10,9), (10,10), (10,11), (10,12), (10,13), (10,14), (10,15),
+                                    //  (11,8), (11,9), (11,10), (11,11), (11,12), (11,13), (11,14), (11,15),
+                                    //  (12,8), (12,9), (12,10), (12,11), (12,12), (12,13), (12,14), (12,15),
+                                    //  (13,8), (13,9), (13,10), (13,11), (13,12), (13,13), (13,14), (13,15),
+                                    //  (14,8), (14,9), (14,10), (14,11), (14,12), (14,13), (14,14), (14,15),
+                                    //  (15,8), (15,9), (15,10), (15,11), (15,12), (15,13), (15,14), (15,15)]
+                                    else if x >= 8 && y >= 8 {
+                                        val = soft_gradient(image8[(y, x)], maxes[3]);
+                                    }
+                                    val
+                                });
+
                             // Flatten the 2D DMatrix into a 1D Vector.
                             let mut flattened: Vec<f64> = Vec::new();
                             let mut max = 0.0;
-                            for i in 0..16 {
-                                for j in 0..16 {
-                                    let val = image8[(i, j)];
+                            for x in 0..16 {
+                                for y in 0..16 {
+                                    let val = segment_normalized[(x, y)];
                                     if val > max {
                                         max = val;
                                     }
@@ -1312,15 +1379,16 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                             assert_eq!(flattened.len(), 256);
                             let normalized: Vec<f64> = {
                                 let mut normalized: Vec<f64> = Vec::new();
-                                for i in 0..256 {
-                                    let val = flattened[i];
-                                    let decimal_val: Decimal = Decimal::from_f64(val / max).unwrap();
+                                for x in 0..256 {
+                                    let val = flattened[x];
+                                    let decimal_val: Decimal =
+                                        Decimal::from_f64(val / max).unwrap();
                                     normalized.push(decimal_val.round_dp(2).to_f64().unwrap());
                                 }
                                 normalized
                             };
                             heatmap.push(normalized);
-                            if i % 25000 == 0 {
+                            if i + 1 % 25000 == 0 {
                                 println!("i: {} of {}", i, corpus.nrows());
                             }
                         }
@@ -1334,8 +1402,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                         f.and_then(|mut f| f.write_all(&bytes))
                             .expect("Failed to write heatmap");
                         println!("Done.");
-                    }
-                    else {
+                    } else {
                         let f = std::fs::File::open(path_heatmap).unwrap();
                         heatmap = bincode::deserialize_from(f).unwrap();
                     }
@@ -1360,11 +1427,11 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                         for x in 0..16 {
                             let val_overall: f64 = overall[(i, x)];
                             let fill = val_overall / max_overall * 16.0;
-                            if height >= axis && axis + (fill / 2.0) >= height ||
-                                height < axis && axis - (fill / 2.0) <= height {
+                            if height >= axis && axis + (fill / 2.0) >= height
+                                || height < axis && axis - (fill / 2.0) <= height
+                            {
                                 row.push(1.0);
-                            }
-                            else {
+                            } else {
                                 row.push(0.0);
                             }
                         }
@@ -1373,42 +1440,42 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                     barchart.push(row);
                 }
 
-                let mut heatchart: Vec<Vec<f64>> = Vec::new();
-                for i in 0..corpus.nrows() {
-                    let mut row: Vec<f64> = Vec::new();
-                    for y in 0..16 {
-                        let _height: f64 = 16.0 - y as f64;
-                        for x in 0..12 {
-                            if x % 3 == 0 {
-                                // it spaces the values out by inserting 4 empty columns to get to 16.
-                                row.push(0.0);
-                            }
-                            let term_freq = overall_terms[(i, x)][y];
-                            let temp: Decimal = Decimal::from_f64(term_freq).unwrap();
-                            row.push(temp.round_dp(2).to_f64().unwrap());
-                        }
-                    }
-                    assert_eq!(row.len(), 256);
-                    heatchart.push(row);
-                }
+                // let mut heatchart: Vec<Vec<f64>> = Vec::new();
+                // for i in 0..corpus.nrows() {
+                //     let mut row: Vec<f64> = Vec::new();
+                //     for y in 0..personality_freqs.nrows() {
+                //         let _height: f64 = 16.0 - y as f64;
+                //         for x in 0..corpus.ncols() {
+                //             if x % 3 == 0 {
+                //                 // it spaces the values out by inserting 4 empty columns to get to 16.
+                //                 row.push(0.0);
+                //             }
+                //             let term_freq = overall_terms[(i, x)][y];
+                //             let temp: Decimal = Decimal::from_f64(term_freq).unwrap();
+                //             row.push(temp.round_dp(2).to_f64().unwrap());
+                //         }
+                //     }
+                //     assert_eq!(row.len(), 256);
+                //     heatchart.push(row);
+                // }
 
-                let mut normalized: Vec<Vec<f64>> = Vec::new();
-                for i in 0..heatchart.len() {
-                    let mut row: Vec<f64> = Vec::new();
-                    let mut max = 0.0;
-                    for j in 0..heatchart[i].len() {
-                        let val = heatchart[i][j];
-                        if val > max {
-                            max = val;
-                        }
-                    }
-                    for j in 0..heatchart[i].len() {
-                        let val = heatchart[i][j];
-                        let decimal_val: Decimal = Decimal::from_f64(val / max).unwrap();
-                        row.push(decimal_val.round_dp(2).to_f64().unwrap());
-                    }
-                    normalized.push(row);
-                }
+                // let mut normalized: Vec<Vec<f64>> = Vec::new();
+                // for i in 0..heatchart.len() {
+                //     let mut row: Vec<f64> = Vec::new();
+                //     let mut max = 0.0;
+                //     for j in 0..heatchart[i].len() {
+                //         let val = heatchart[i][j];
+                //         if val > max {
+                //             max = val;
+                //         }
+                //     }
+                //     for j in 0..heatchart[i].len() {
+                //         let val = heatchart[i][j];
+                //         let decimal_val: Decimal = Decimal::from_f64(val / max).unwrap();
+                //         row.push(decimal_val.round_dp(2).to_f64().unwrap());
+                //     }
+                //     normalized.push(row);
+                // }
 
                 println!("Saving normalized visual signal...");
                 let path_normalized = &Path::new("./normalized_visual_signal.bincode");
@@ -1421,7 +1488,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                 f.and_then(|mut f| f.write_all(&bytes))
                     .expect("Failed to write visual signal");
 
-                let personality_frequency = {
+                let _personality_frequency = {
                     let path_personality_frequency = &Path::new("./personality_frequency.bincode");
                     let mut personality_frequency: Vec<Vec<f64>>;
                     if !path_personality_frequency.exists() {
@@ -1441,7 +1508,8 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                             for x in 0..corpus.ncols() {
                                 for y in 0..16 {
                                     let val = overall_terms[(i, x)][y];
-                                    let decimal_val: Decimal = Decimal::from_f64(val / max).unwrap();
+                                    let decimal_val: Decimal =
+                                        Decimal::from_f64(val / max).unwrap();
                                     row.push(decimal_val.round_dp(2).to_f64().unwrap());
                                 }
                             }
@@ -1457,23 +1525,33 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                         f.and_then(|mut f| f.write_all(&bytes))
                             .expect("Failed to write personality frequency");
                         println!("Done.");
-                    }
-                    else {
+                    } else {
                         let f = std::fs::File::open(path_personality_frequency).unwrap();
                         personality_frequency = bincode::deserialize_from(f).unwrap();
                     }
                     personality_frequency
                 };
+
+                let mut corpus_tf_idf: Vec<Vec<f64>> = Vec::new();
+                for x in 0..tf_idf.nrows() {
+                    let mut row: Vec<f64> = Vec::new();
+                    for y in 0..tf_idf.ncols() {
+                        let val = tf_idf[(x, y)];
+                        let decimal_val: Decimal = Decimal::from_f64(val).unwrap();
+                        row.push(decimal_val.round_dp(4).to_f64().unwrap());
+                    }
+                    corpus_tf_idf.push(row);
+                }
                 println!("Saving tf_idf...");
                 let f = std::fs::OpenOptions::new()
                     .write(true)
                     .create(true)
                     .truncate(true)
                     .open(path);
-                let tf_idf_bytes = bincode::serialize(&personality_frequency).unwrap();
+                let tf_idf_bytes = bincode::serialize(&corpus_tf_idf).unwrap();
                 f.and_then(|mut f| f.write_all(&tf_idf_bytes))
                     .expect("Failed to write tf_idf");
-                personality_frequency
+                corpus_tf_idf
             }
         };
 
@@ -1639,28 +1717,33 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
     // Split bag into training/test (80%/20%)
     // let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, true);
 
-    let rf_ml_wrapper =
-        |x: &DenseMatrix<f64>, y: &Vec<f64>, parameters: RandomForestClassifierParameters| {
-            RandomForestClassifier::fit(x, y, parameters).and_then(|rf| {
-                unsafe {
-                    static mut ITERATIONS: u32 = 0;
-                    ITERATIONS += 1;
-                    if ITERATIONS % 10 == 0 {
-                      ITERATIONS = 0;
-                      println!("Serializing random forest...");
-                      let bytes_rf = bincode::serialize(&rf).unwrap();
-                      File::create(format!("mbti_rf__{}.model", member_id))
-                          .and_then(|mut f| f.write_all(&bytes_rf))
-                          .expect(format!("Can not persist random_forest {}", member_id).as_str());
-                    }
-                    println!("Iteration: {}", ITERATIONS);
+    let rf_ml_wrapper = |x: &DenseMatrix<f64>,
+                         y: &Vec<f64>,
+                         parameters: RandomForestClassifierParameters| {
+        RandomForestClassifier::fit(x, y, parameters).and_then(|rf| {
+            unsafe {
+                static mut ITERATIONS: u32 = 0;
+                ITERATIONS += 1;
+                if ITERATIONS % 10 == 0 {
+                    ITERATIONS = 0;
+                    println!("Serializing random forest...");
+                    let bytes_rf = bincode::serialize(&rf).unwrap();
+                    File::create(format!("mbti_rf__{}.model", member_id))
+                        .and_then(|mut f| f.write_all(&bytes_rf))
+                        .expect(format!("Can not persist random_forest {}", member_id).as_str());
                 }
-                // Evaluate
-                let y_hat_rf: Vec<f64> = rf.predict(x).unwrap();
-                println!("Random forest accuracy: {}, MSE: {}", accuracy(y, &y_hat_rf), mean_squared_error(y, &y_hat_rf));
-                Ok(rf)
-            })
-        };
+                println!("Iteration: {}", ITERATIONS);
+            }
+            // Evaluate
+            let y_hat_rf: Vec<f64> = rf.predict(x).unwrap();
+            let m1 = accuracy(y, &y_hat_rf);
+            let m2 = mean_squared_error(y, &y_hat_rf);
+
+            println!("Random forest accuracy: {}, MSE: {}", m1, m2);
+
+            Ok(rf)
+        })
+    };
 
     let svm_ml_wrapper =
         |x: &DenseMatrix<f64>,
@@ -1671,27 +1754,37 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
                     static mut ITERATIONS: u32 = 0;
                     ITERATIONS += 1;
                     if ITERATIONS % 10 == 0 {
-                      ITERATIONS = 0;
-                      println!("Serializing support vector machine...");
-                      let filename = format!("./mbti_svm__{}.model", member_id);
-                      let path_model: &Path = Path::new(&filename);
-                      let f = std::fs::OpenOptions::new()
-                          .write(true)
-                          .create(true)
-                          .truncate(true)
-                          .open(path_model);
-                      let bytes = bincode::serialize(&svm).unwrap();
-                      f.and_then(|mut f| f.write_all(&bytes))
-                          .expect("Failed to write samples");
+                        ITERATIONS = 0;
+                        println!("Serializing support vector machine...");
+                        let filename = format!("./mbti_svm__{}.model", member_id);
+                        let path_model: &Path = Path::new(&filename);
+                        let f = std::fs::OpenOptions::new()
+                            .write(true)
+                            .create(true)
+                            .truncate(true)
+                            .open(path_model);
+                        let bytes = bincode::serialize(&svm).unwrap();
+                        f.and_then(|mut f| f.write_all(&bytes))
+                            .expect("Failed to write samples");
                     }
                     println!("Iteration: {}", ITERATIONS);
                     // Evaluate
                     let y_hat_svm: Vec<f64> = svm.predict(x).unwrap();
-                    println!("SVM accuracy: {}, MSE: {}, AUC SVM: {}", accuracy(y, &y_hat_svm), mean_squared_error(y, &y_hat_svm), roc_auc_score(y, &y_hat_svm));
+                    println!(
+                        "SVM accuracy: {}, MSE: {}, AUC SVM: {}",
+                        accuracy(y, &y_hat_svm),
+                        mean_squared_error(y, &y_hat_svm),
+                        roc_auc_score(y, &y_hat_svm)
+                    );
                 }
                 // Evaluate
                 let y_hat_svm: Vec<f64> = svm.predict(x).unwrap();
-                println!("SVM accuracy: {}, MSE: {}, AUC SVM: {}", accuracy(y, &y_hat_svm), mean_squared_error(y, &y_hat_svm), roc_auc_score(y, &y_hat_svm));
+                let m1 = accuracy(y, &y_hat_svm);
+                let m2 = mean_squared_error(y, &y_hat_svm);
+                let m3 = roc_auc_score(y, &y_hat_svm);
+
+                println!("SVM accuracy: {}, MSE: {}, AUC SVM: {}", m1, m2, m3);
+
                 Ok(svm)
             })
         };
@@ -1737,7 +1830,7 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
     let tweaked_svm_params: SVCParameters<f64, DenseMatrix<f64>, LinearKernel> =
         SVCParameters::default()
             .with_epoch(2)
-            .with_c(1.0)
+            .with_c(2000.0)
             .with_tol(0.0001)
             .with_kernel(Kernels::linear());
 
@@ -1788,11 +1881,12 @@ fn build_sets(
     classifiers: &Vec<u8>,
     leaf_a: u8,
     leaf_b: u8,
-) -> (Vec<Vec<f64>>, Vec<u8>) {
+) -> (Vec<Vec<f64>>, Vec<u8>, Vec<u8>) {
     let mut left_features: Vec<Vec<f64>> = Vec::new();
     let mut right_features: Vec<Vec<f64>> = Vec::new();
     let mut left_labels: Vec<u8> = Vec::new();
     let mut right_labels: Vec<u8> = Vec::new();
+    let mut original_labels: Vec<u8> = Vec::new();
     let (side_index, min_sample_size) = {
         let mut acc: Vec<usize> = Vec::new();
         for (i, y) in classifiers.iter().enumerate() {
@@ -1802,10 +1896,12 @@ fn build_sets(
                 left_features.push(corpus[i].clone());
                 left_labels.push(0u8);
                 acc.push(0);
+                original_labels.push(*y);
             } else if right {
                 right_features.push(corpus[i].clone());
                 right_labels.push(1u8);
                 acc.push(1);
+                original_labels.push(*y);
             } else {
                 panic!("Invalid classifier");
             }
@@ -1859,7 +1955,7 @@ fn build_sets(
         // assert!(acc.len() == min_sample_size * 2);
         acc
     };
-    (new_corpus, new_labels)
+    (new_corpus, new_labels, original_labels)
 }
 
 fn main() -> Result<(), Error> {
@@ -1867,12 +1963,27 @@ fn main() -> Result<(), Error> {
     let (corpus, classifiers) = normalize(&training_set);
     let mut map = Map::new();
     let mut data = [
-        Vec::new(), Vec::new(), Vec::new(), Vec::new(),
-        Vec::new(), Vec::new(), Vec::new(), Vec::new(),
-        Vec::new(), Vec::new(), Vec::new(), Vec::new(),
-        Vec::new(), Vec::new(), Vec::new(), Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
     ];
-    assert_eq!(0b01000000 ^ 0b00010000 ^ 0b00000100 ^ 0b00000001, 0b01010101);
+    assert_eq!(
+        0b01000000 ^ 0b00010000 ^ 0b00000100 ^ 0b00000001,
+        0b01010101
+    );
     let normalized_path = Path::new("./normalized_visual_signal.bincode");
     let mut buf = Vec::new();
     File::open(normalized_path)
@@ -1881,7 +1992,9 @@ fn main() -> Result<(), Error> {
         .expect("Unable to read file");
     let visual_signal: Vec<Vec<f64>> = bincode::deserialize(&buf).unwrap();
     for (i, sample) in visual_signal.iter().enumerate() {
-        let mbti = MBTI { indicator: classifiers[i] };
+        let mbti = MBTI {
+            indicator: classifiers[i],
+        };
         let label: String = mbti.to_string();
         let mut row: Vec<Value> = Vec::new();
         for (_j, feature) in sample.iter().enumerate() {
@@ -1948,35 +2061,35 @@ fn main() -> Result<(), Error> {
     let trees = ["IE", "NS", "TF", "JP"];
     tally(&classifiers);
     // Build sets for an ensemble of models
-    let (ie_corpus, ie_classifiers) = build_sets(
+    let (ie_corpus, ie_classifiers, ie_labels) = build_sets(
         &corpus,
         &classifiers,
         indicator::mb_flag::I,
         indicator::mb_flag::E,
     );
-    let (ns_corpus, ns_classifiers) = build_sets(
+    let (ns_corpus, ns_classifiers, ns_labels) = build_sets(
         &corpus,
         &classifiers,
         indicator::mb_flag::N,
         indicator::mb_flag::S,
     );
-    let (tf_corpus, tf_classifiers) = build_sets(
+    let (tf_corpus, tf_classifiers, tf_labels) = build_sets(
         &corpus,
         &classifiers,
         indicator::mb_flag::T,
         indicator::mb_flag::F,
     );
-    let (jp_corpus, jp_classifiers) = build_sets(
+    let (jp_corpus, jp_classifiers, jp_labels) = build_sets(
         &corpus,
         &classifiers,
         indicator::mb_flag::J,
         indicator::mb_flag::P,
     );
     let ensemble = [
-        (ie_corpus, ie_classifiers),
-        (ns_corpus, ns_classifiers),
-        (tf_corpus, tf_classifiers),
-        (jp_corpus, jp_classifiers),
+        (ie_corpus, ie_classifiers, ie_labels),
+        (ns_corpus, ns_classifiers, ns_labels),
+        (tf_corpus, tf_classifiers, tf_labels),
+        (jp_corpus, jp_classifiers, jp_labels),
     ];
     // Build sets of an ensemble of models having a single classifier
     // Train models
@@ -2017,7 +2130,11 @@ fn main() -> Result<(), Error> {
             println! {"Training SVM model for {}", trees[i]};
             let ensemble_x = ensemble[i].0.clone();
             let ensemble_y = ensemble[i].1.clone();
-            train(&ensemble_x[0..2000].to_vec(), &ensemble_y[0..2000].to_vec(), &trees[i]);
+            train(
+                &ensemble_x[0..2000].to_vec(),
+                &ensemble_y[0..2000].to_vec(),
+                &trees[i],
+            );
             let svm: SVC<f64, DenseMatrix<f64>, LinearKernel> = {
                 let mut buf: Vec<u8> = Vec::new();
                 File::open(path_model)
@@ -2040,14 +2157,52 @@ fn main() -> Result<(), Error> {
     }
     // Get predictions for ensemble
     let mut ensemble_pred: [Vec<f64>; 4] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+    let mut ensemble_y_test: [Vec<f64>; 4] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
     for (i, model) in models.iter().enumerate() {
         let x = DenseMatrix::from_2d_vec(&ensemble[i].0[0..2000].to_vec());
         let y = ensemble[i].1[0..2000]
+            .to_vec()
             .iter()
             .map(|x| *x as f64)
             .collect::<Vec<f64>>();
-        let (_x_train, x_test, _y_train, y_test) = train_test_split(&x, &y, 0.2, true);
+        let (_x_train, x_test, _y_train, y_test) = train_test_split(&x, &y, 0.2, false);
         ensemble_pred[i] = model.predict(&x_test).unwrap();
+        let original_label_ie = ensemble[0].2[1600..2000]
+            .to_vec()
+            .iter()
+            .map(|x| (MBTI { indicator: *x }).to_string().chars().nth(0).unwrap())
+            .collect::<Vec<char>>();
+        let original_label_ns: Vec<char> = ensemble[1].2[1600..2000]
+            .to_vec()
+            .iter()
+            .map(|x| (MBTI { indicator: *x }).to_string().chars().nth(1).unwrap())
+            .collect::<Vec<char>>();
+        let original_label_tf: Vec<char> = ensemble[2].2[1600..2000]
+            .to_vec()
+            .iter()
+            .map(|x| (MBTI { indicator: *x }).to_string().chars().nth(2).unwrap())
+            .collect::<Vec<char>>();
+        let original_label_jp: Vec<char> = ensemble[3].2[1600..2000]
+            .to_vec()
+            .iter()
+            .map(|x| (MBTI { indicator: *x }).to_string().chars().nth(3).unwrap())
+            .collect::<Vec<char>>();
+        let original_labels: Vec<f64> = {
+            let mut labels: Vec<f64> = Vec::new();
+            for i in 0..original_label_ie.len() {
+                let label = format!(
+                    "{}{}{}{}",
+                    original_label_ie[i],
+                    original_label_ns[i],
+                    original_label_tf[i],
+                    original_label_jp[i]
+                );
+                labels.push(MBTI::from_string(&label).indicator as f64);
+            }
+            labels
+        };
+        ensemble_y_test[i] = original_labels;
+
         println!(
             "{} accuracy: {}",
             trees[i],
@@ -2056,6 +2211,7 @@ fn main() -> Result<(), Error> {
         println!("MSE: {}", mean_squared_error(&y_test, &ensemble_pred[i]));
     }
     let mut svm_ensemble_y_pred: Vec<f64> = Vec::new();
+    let mut svm_ensembly_y_test: Vec<f64> = Vec::new();
     assert!(ensemble_pred.len() == 4);
     for i in 0..ensemble_pred[0].len() {
         let mut mbti: u8 = 0u8;
@@ -2090,6 +2246,12 @@ fn main() -> Result<(), Error> {
             mbti |= flag;
         }
         svm_ensemble_y_pred.push(mbti as f64);
+        assert!(
+            (ensemble_y_test[0][i] == ensemble_y_test[1][i])
+                && (ensemble_y_test[1][i] == ensemble_y_test[2][i]
+                    && (ensemble_y_test[2][i] == ensemble_y_test[3][i]))
+        );
+        svm_ensembly_y_test.push(ensemble_y_test[0][i]);
     }
 
     // Evaluate
@@ -2152,12 +2314,17 @@ fn main() -> Result<(), Error> {
         accuracy(&y_test, &rf.predict(&x_test).unwrap())
     );
     sample_report(&y_test, &rf.predict(&x_test).unwrap());
+
+    // Print the ensemble report.
     println!(
         "Ensemble Support Vector Machine accuracy: {}",
-        accuracy(&y_test, &svm_ensemble_y_pred)
+        accuracy(&svm_ensembly_y_test, &svm_ensemble_y_pred)
     );
-    println!("MSE: {}", mean_squared_error(&y_test, &svm_ensemble_y_pred));
-    sample_report(&y_test, &svm_ensemble_y_pred);
+    println!(
+        "MSE: {}",
+        mean_squared_error(&svm_ensembly_y_test, &svm_ensemble_y_pred)
+    );
+    sample_report(&svm_ensembly_y_test, &svm_ensemble_y_pred);
 
     Ok(())
 }
