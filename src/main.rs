@@ -1543,7 +1543,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                 f.and_then(|mut f| f.write_all(&bytes))
                     .expect("Failed to write visual signal");
 
-                let _personality_frequency = {
+                let personality_frequency = {
                     let path_personality_frequency = &Path::new("./personality_frequency.bincode");
                     let mut personality_frequency: Vec<Vec<f64>>;
                     if !path_personality_frequency.exists() {
