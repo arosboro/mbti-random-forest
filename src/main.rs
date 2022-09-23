@@ -346,6 +346,7 @@ fn load_data() -> Vec<Sample> {
             bincode::deserialize(&load_bytes(path)).unwrap()
         } else {
             println!("Saving samples...");
+            const BALANCED_SAMPLES: bool = true;
             let mut samples: Vec<Sample> = Vec::new();
             let mut reader = csv::Reader::from_path(csv_target).unwrap();
             let expressions = [
@@ -353,49 +354,93 @@ fn load_data() -> Vec<Sample> {
                 Regex::new(r"[^a-zA-Z0-9 ]").unwrap(),
                 Regex::new(r"\s+").unwrap(),
             ];
+            let mut counters: HashMap<u8, usize> = HashMap::new();
             for row in reader.deserialize::<Row>() {
                 match row {
                     Ok(row) => {
-                        // Split each row on the delimiter "|||" and collect into a vector
-                        let sample_row: Vec<Sample> = row
-                            .posts
-                            .split("|||")
-                            .map(|post| Sample {
-                                lemmas: tokenize(post, &expressions),
-                                label: MBTI::from_string(&row.r#type),
-                            })
-                            .collect();
-                        samples.extend(sample_row);
-                        // Create a new sample with the lemmas and the label from a subset size 150.
-                        // let mut subset: Vec<Sample> = Vec::new();
-                        // let mut lemma_subset: Vec<String> = Vec::new();
-                        // for (i, lemma) in lemmas.iter().enumerate() {
-                        //     lemma_subset.push(lemma.clone());
-                        //     if (i + 1) % 150 == 0 {
-                        //         assert_eq!(lemma_subset.len(), 150);
-                        //         let sub = lemma_subset.clone();
-                        //         lemma_subset = Vec::new();
-                        //         subset.push(Sample {
-                        //             lemmas: sub,
-                        //             label: MBTI::from_string(&row.r#type),
-                        //         });
-                        //     }
-                        // }
-                        // samples.append(&mut subset);
+                        // Choose the first POST_SIZE lemmas for a composite post.
+                        const MANUAL_POST_SIZE: usize = 32;
+                        const MANUAL_VS_AVG: bool = true;
+                        if MANUAL_VS_AVG {
+                            let mut lemma_group: Vec<String> = Vec::new();
+                            for post in row.posts.split("|||").collect::<Vec<&str>>() {
+                                let lemmas = tokenize(post, &expressions);
+                                if lemmas.len() > 0 {
+                                    lemma_group.extend(lemmas);
+                                }
+                            }
+                            let mut lemma_post: Vec<String> = Vec::new();
+                            lemma_group.iter().enumerate().for_each(|(i, lemma)| {
+                                lemma_post.push(lemma.clone());
+                                if (i + 1) % MANUAL_POST_SIZE == 0 {
+                                    let lemmas = lemma_post.clone();
+                                    samples.push(Sample {
+                                        lemmas,
+                                        label: MBTI::from_string(&row.r#type),
+                                    });
+                                    counters
+                                        .entry(MBTI::from_string(&row.r#type).indicator)
+                                        .and_modify(|e| *e += 1)
+                                        .or_insert(1);
+                                    lemma_post.clear();
+                                }
+                            });
+                        } else {
+                            let sample_row: Vec<Sample> = row
+                                .posts
+                                .split("|||")
+                                .map(|post| {
+                                    counters
+                                        .entry(MBTI::from_string(&row.r#type).indicator)
+                                        .and_modify(|e| *e += 1)
+                                        .or_insert(1);
+                                    Sample {
+                                        lemmas: tokenize(post, &expressions),
+                                        label: MBTI::from_string(&row.r#type),
+                                    }
+                                })
+                                .collect();
+                            samples.extend(sample_row);
+                        }
                     }
                     Err(e) => println!("Error: {}", e),
                 }
             }
+
+            // Ensure the same number of features and classifiers exist in each category.
+            let mut balanced_samples: Vec<Sample> = Vec::new();
+            let min_count = *counters.values().min().unwrap();
+            let mut entry_counters: HashMap<u8, usize> = HashMap::new();
+            for sample in samples.iter() {
+                let count = *entry_counters.get(&sample.label.indicator).unwrap_or(&0);
+                if count < min_count {
+                    entry_counters
+                        .entry(sample.label.indicator)
+                        .and_modify(|e| *e += 1)
+                        .or_insert(1);
+                    balanced_samples.push(sample.clone());
+                }
+            }
+            println! {"{} samples per classifier.", min_count};
             // Save samples
             let f = std::fs::OpenOptions::new()
                 .write(true)
                 .create(true)
                 .truncate(true)
                 .open(path);
-            let samples_bytes = bincode::serialize(&samples).unwrap();
+            let samples_bytes = bincode::serialize(if BALANCED_SAMPLES {
+                &balanced_samples
+            } else {
+                &samples
+            })
+            .unwrap();
             f.and_then(|mut f| f.write_all(&samples_bytes))
                 .expect("Failed to write samples");
-            samples
+            if BALANCED_SAMPLES {
+                balanced_samples
+            } else {
+                samples
+            }
         }
     };
 
@@ -980,10 +1025,21 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                         // a tuple containing 16 values, one for each personality type.
                         let mut val: [f64; 16] = [0.0; 16];
                         for x in 0..16 {
-                            if personality_freq[x].contains_key(term) {
-                                val[x] = (personality_freq[x][term] / overall_freq[term]) as f64;
+                            const MODE_TERM_FREQ_VS_OVERALL_FREQ: bool = true;
+                            if MODE_TERM_FREQ_VS_OVERALL_FREQ {
+                                if personality_freq[x].contains_key(term) {
+                                    val[x] = (personality_freq[x][term] / overall_freq[term])
+                                        * tf_idf[(i, j)] as f64;
+                                } else {
+                                    val[x] = 0.0;
+                                }
                             } else {
-                                val[x] = 0.0;
+                                if personality_freq[x].contains_key(term) {
+                                    val[x] =
+                                        (personality_freq[x][term] / overall_freq[term]) as f64;
+                                } else {
+                                    val[x] = 0.0;
+                                }
                             }
                         }
                         val
@@ -1150,8 +1206,12 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 overall[(i, n)] / max_overall
                             });
                             let image8: DMatrix<f64> = DMatrix::from_fn(16, 16, |y, x| {
-                                let mut avg: f64 = 0.0;
+                                const DIRECT_VS_AVG: bool = true;
+                                let index: [usize; 8];
                                 let n: usize;
+                                let shape: [usize; 2];
+                                let mut avg: f64 = 0.0;
+                                let mut score: f64 = 0.0;
                                 // Alternate x and y values in each quadrant to improve readability.
                                 // The first 64 bits rectangle (8x8) is the indicator IE.
                                 // [(0,0), (0,1), (0,2), (0,3), (0,4), (0,5), (0,6), (0,7),
@@ -1165,28 +1225,16 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 // First do [(0,0), (7,3)].
                                 // The first 32 bits rectangle (8x4) is the indicator I.
                                 if x <= 3 && y <= 7 {
-                                    let i_index = [8, 9, 10, 11, 12, 13, 14, 15];
-                                    for delta in i_index.iter() {
-                                        avg += overall[(i, *delta)] / max_overall;
-                                    }
-                                    avg /= 8.0;
+                                    index = [8, 9, 10, 11, 12, 13, 14, 15];
                                     n = 0;
-                                    if avg > maxes[n] {
-                                        maxes[n] = avg;
-                                    }
+                                    shape = [8, 4];
                                 }
                                 // Then do [(0,4), (7,7)].
                                 // The second 32 bits rectangle (8x4) is the indicator E.
                                 else if x >= 4 && x <= 7 && y <= 7 {
-                                    let e_index = [0, 1, 2, 3, 4, 5, 6, 7];
-                                    for delta in e_index.iter() {
-                                        avg += overall[(i, *delta)] / max_overall;
-                                    }
-                                    avg /= 8.0;
-                                    let n = 0;
-                                    if avg > maxes[n] {
-                                        maxes[n] = avg;
-                                    }
+                                    index = [0, 1, 2, 3, 4, 5, 6, 7];
+                                    n = 0;
+                                    shape = [8, 4];
                                 }
                                 // The second 64 bits rectangle (8x8) is the indicator SN.
                                 // [(0,8), (0,9), (0,10), (0,11), (0,12), (0,13), (0,14), (0,15),
@@ -1200,28 +1248,16 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 // First do [(0,8), (3,15)].
                                 // The third 32 bits rectangle (4x8) is the indicator S.
                                 else if x >= 8 && x <= 15 && y <= 3 {
-                                    let s_index = [0, 1, 2, 3, 8, 9, 10, 11];
-                                    for delta in s_index.iter() {
-                                        avg += overall[(i, *delta)] / max_overall;
-                                    }
-                                    avg /= 8.0;
-                                    let n = 1;
-                                    if avg > maxes[n] {
-                                        maxes[n] = avg;
-                                    }
+                                    index = [0, 1, 2, 3, 8, 9, 10, 11];
+                                    n = 1;
+                                    shape = [4, 8];
                                 }
                                 // Then do [(4,8), (7,15)].
                                 // The fourth 32 bits rectangle (4x8) is the indicator N.
                                 else if x >= 8 && x <= 15 && y >= 4 && y <= 7 {
-                                    let n_index = [4, 5, 6, 7, 12, 13, 14, 15];
-                                    for delta in n_index.iter() {
-                                        avg += overall[(i, *delta)] / max_overall;
-                                    }
-                                    avg /= 16.0;
-                                    let n = 1;
-                                    if avg > maxes[n] {
-                                        maxes[n] = avg;
-                                    }
+                                    index = [4, 5, 6, 7, 12, 13, 14, 15];
+                                    n = 1;
+                                    shape = [4, 8];
                                 }
                                 // The third 64 bits rectangle (8x8) is the indicator TF.
                                 // [(8,0), (8,1), (8,2), (8,3), (8,4), (8,5), (8,6), (8,7),
@@ -1235,28 +1271,16 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 // First do [(8,0), (11,7)].
                                 // The fifth 32 bits rectangle (8x4) is the indicator T.
                                 else if x <= 7 && y >= 8 && y <= 11 {
-                                    let t_index = [2, 3, 6, 7, 10, 11, 14, 15];
-                                    for delta in t_index.iter() {
-                                        avg += overall[(i, *delta)] / max_overall;
-                                    }
-                                    avg /= 8.0;
-                                    let n = 2;
-                                    if avg > maxes[n] {
-                                        maxes[n] = avg;
-                                    }
+                                    index = [2, 3, 6, 7, 10, 11, 14, 15];
+                                    n = 2;
+                                    shape = [4, 8];
                                 }
                                 // Then do [(12,0), (15,7)].
                                 // The sixth 32 bits rectangle (8x4) is the indicator F.
                                 else if x <= 7 && y >= 12 && y <= 15 {
-                                    let f_index = [0, 1, 4, 5, 8, 9, 12, 13];
-                                    for delta in f_index.iter() {
-                                        avg += overall[(i, *delta)] / max_overall;
-                                    }
-                                    avg /= 8.0;
-                                    let n = 2;
-                                    if avg > maxes[n] {
-                                        maxes[n] = avg;
-                                    }
+                                    index = [0, 1, 4, 5, 8, 9, 12, 13];
+                                    n = 2;
+                                    shape = [4, 8];
                                 }
                                 // The fourth 64 bits square (8x8) is the indicator JP.
                                 // [(8,8), (8,9), (8,10), (8,11), (8,12), (8,13), (8,14), (8,15),
@@ -1270,32 +1294,46 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                 // First do [(8,8), (15,11)].
                                 // The seventh 32 bits rectangle (4x8) is the indicator J.
                                 else if x >= 8 && x <= 11 && y >= 8 && y <= 15 {
-                                    let j_index = [0, 2, 4, 6, 8, 10, 12, 14];
-                                    for delta in j_index.iter() {
-                                        avg += overall[(i, *delta)] / max_overall;
-                                    }
-                                    avg /= 8.0;
-                                    let n = 3;
-                                    if avg > maxes[n] {
-                                        maxes[n] = avg;
-                                    }
+                                    index = [0, 2, 4, 6, 8, 10, 12, 14];
+                                    n = 3;
+                                    shape = [8, 4];
                                 }
                                 // Then do [(8, 12), (15,15)].
                                 // The eighth 32 bits rectangle (4x8) is the indicator P.
                                 else if x >= 12 && x <= 15 && y >= 8 && y <= 15 {
-                                    let p_index = [1, 3, 5, 7, 9, 11, 13, 15];
-                                    for delta in p_index.iter() {
-                                        avg += overall[(i, *delta)] / max_overall;
-                                    }
-                                    avg /= 8.0;
-                                    let n = 3;
-                                    if avg > maxes[n] {
-                                        maxes[n] = avg;
-                                    }
+                                    index = [1, 3, 5, 7, 9, 11, 13, 15];
+                                    n = 3;
+                                    shape = [8, 4];
                                 } else {
                                     panic!("Invalid coordinates: ({}, {})", x, y);
                                 }
-                                avg
+                                {
+                                    if DIRECT_VS_AVG {
+                                        for delta in index.iter() {
+                                            // translate x and y into coordinates for overall_terms's shape.
+                                            // find the relative position in the overall_term subvector with cols corpus.ncols()
+                                            // and rows corpus.nrows().
+                                            let relative_y = y % shape[0];
+                                            let relative_x = x % shape[1];
+                                            score += overall_terms
+                                                [(i, (relative_y + 1) * (relative_x + 1) - 1)]
+                                                [*delta];
+                                        }
+                                        if score > maxes[n] {
+                                            maxes[n] = score;
+                                        }
+                                        score
+                                    } else {
+                                        for delta in index.iter() {
+                                            avg += overall[(i, *delta)] / max_overall;
+                                        }
+                                        avg /= index.len() as f64;
+                                        if avg > maxes[n] {
+                                            maxes[n] = avg;
+                                        }
+                                        avg
+                                    }
+                                }
                             });
 
                             let soft_gradient = |x: f64, max: f64| -> f64 {
@@ -1312,6 +1350,7 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
 
                             let segment_normalized: DMatrix<f64> =
                                 DMatrix::from_fn(image8.nrows(), image8.ncols(), |y, x| {
+                                    const SOFTGRADIENT: bool = false;
                                     let mut val: f64 = 0.0;
                                     // The first 64 bits square (8x8) is the indicator IE.
                                     // [(0,0), (0,1), (0,2), (0,3), (0,4), (0,5), (0,6), (0,7),
@@ -1323,7 +1362,11 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                     //  (6,0), (6,1), (6,2), (6,3), (6,4), (6,5), (6,6), (6,7),
                                     //  (7,0), (7,1), (7,2), (7,3), (7,4), (7,5), (7,6), (7,7)]
                                     if x <= 7 && y <= 7 {
-                                        val = soft_gradient(image8[(y, x)], maxes[0]);
+                                        if SOFTGRADIENT {
+                                            val = soft_gradient(image8[(y, x)], maxes[0]);
+                                        } else {
+                                            val = image8[(y, x)] / maxes[0];
+                                        }
                                     }
                                     // The second 64 bits square (8x8) is the indicator NS.
                                     // [(0,8), (0,9), (0,10), (0,11), (0,12), (0,13), (0,14), (0,15),
@@ -1335,7 +1378,11 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                     //  (6,8), (6,9), (6,10), (6,11), (6,12), (6,13), (6,14), (6,15),
                                     //  (7,8), (7,9), (7,10), (7,11), (7,12), (7,13), (7,14), (7,15)]
                                     else if x >= 8 && y <= 7 {
-                                        val = soft_gradient(image8[(y, x)], maxes[1]);
+                                        if SOFTGRADIENT {
+                                            val = soft_gradient(image8[(y, x)], maxes[1]);
+                                        } else {
+                                            val = image8[(y, x)] / maxes[1];
+                                        }
                                     }
                                     // The third 64 bits square (8x8) is the indicator TF.
                                     // [(8,0), (8,1), (8,2), (8,3), (8,4), (8,5), (8,6), (8,7),
@@ -1347,7 +1394,11 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                     //  (14,0), (14,1), (14,2), (14,3), (14,4), (14,5), (14,6), (14,7),
                                     //  (15,0), (15,1), (15,2), (15,3), (15,4), (15,5), (15,6), (15,7)]
                                     else if x <= 7 && y >= 8 {
-                                        val = soft_gradient(image8[(y, x)], maxes[2]);
+                                        if SOFTGRADIENT {
+                                            val = soft_gradient(image8[(y, x)], maxes[2]);
+                                        } else {
+                                            val = image8[(y, x)] / maxes[2];
+                                        }
                                     }
                                     // The fourth 64 bits square (8x8) is the indicator JP.
                                     // [(8,8), (8,9), (8,10), (8,11), (8,12), (8,13), (8,14), (8,15),
@@ -1359,7 +1410,11 @@ fn normalize(training_set: &Vec<Sample>) -> (Vec<Vec<f64>>, Vec<u8>) {
                                     //  (14,8), (14,9), (14,10), (14,11), (14,12), (14,13), (14,14), (14,15),
                                     //  (15,8), (15,9), (15,10), (15,11), (15,12), (15,13), (15,14), (15,15)]
                                     else if x >= 8 && y >= 8 {
-                                        val = soft_gradient(image8[(y, x)], maxes[3]);
+                                        if SOFTGRADIENT {
+                                            val = soft_gradient(image8[(y, x)], maxes[3]);
+                                        } else {
+                                            val = image8[(y, x)] / maxes[3];
+                                        }
                                     }
                                     val
                                 });
@@ -1707,13 +1762,18 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
     println!("x shape: ({}, {})", corpus.len(), corpus[0].len());
     println!("y shape: ({}, {})", classifiers.len(), 1);
 
+    // let sub_x = corpus[0..5000].to_vec();
+    // let sub_y = classifiers[0..5000].to_vec();
+    let sub_x = corpus;
+    let sub_y = classifiers;
+
     let x: DenseMatrix<f64> = DenseMatrix::new(
-        corpus.len(),
-        corpus[0].len(),
-        corpus.clone().into_iter().flatten().collect(),
+        sub_x.len(),
+        sub_x[0].len(),
+        sub_x.clone().into_iter().flatten().collect(),
     );
     // These are our target class labels
-    let y: Vec<f64> = classifiers.into_iter().map(|x| *x as f64).collect();
+    let y: Vec<f64> = sub_y.into_iter().map(|x| *x as f64).collect();
     // Split bag into training/test (80%/20%)
     // let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.2, true);
 
@@ -1768,14 +1828,6 @@ fn train(corpus: &Vec<Vec<f64>>, classifiers: &Vec<u8>, member_id: &str) {
                             .expect("Failed to write samples");
                     }
                     println!("Iteration: {}", ITERATIONS);
-                    // Evaluate
-                    let y_hat_svm: Vec<f64> = svm.predict(x).unwrap();
-                    println!(
-                        "SVM accuracy: {}, MSE: {}, AUC SVM: {}",
-                        accuracy(y, &y_hat_svm),
-                        mean_squared_error(y, &y_hat_svm),
-                        roc_auc_score(y, &y_hat_svm)
-                    );
                 }
                 // Evaluate
                 let y_hat_svm: Vec<f64> = svm.predict(x).unwrap();
@@ -1960,7 +2012,28 @@ fn build_sets(
 
 fn main() -> Result<(), Error> {
     let training_set: Vec<Sample> = load_data();
-    let (corpus, classifiers) = normalize(&training_set);
+    let (data_x, data_y) = normalize(&training_set);
+    let train_test_length: usize = (data_x.len() as f64 * 0.9) as usize;
+    let validate_length: usize = (data_x.len() as f64 * 0.1) as usize;
+    let (corpus, classifiers) = {
+        let mut corpus: Vec<Vec<f64>> = Vec::new();
+        let mut classifiers: Vec<u8> = Vec::new();
+        for i in 0..train_test_length {
+            corpus.push(data_x.get(i).unwrap().clone());
+            classifiers.push(data_y.get(i).unwrap().clone());
+        }
+        (corpus, classifiers)
+    };
+    let (validate_x, validate_y) = {
+        let mut validate_x: Vec<Vec<f64>> = Vec::new();
+        let mut validate_y: Vec<u8> = Vec::new();
+        for i in train_test_length..train_test_length + validate_length {
+            validate_x.push(data_x.get(i).unwrap().clone());
+            validate_y.push(data_y.get(i).unwrap().clone());
+        }
+        (validate_x, validate_y)
+    };
+
     let mut map = Map::new();
     let mut data = [
         Vec::new(),
@@ -1993,7 +2066,7 @@ fn main() -> Result<(), Error> {
     let visual_signal: Vec<Vec<f64>> = bincode::deserialize(&buf).unwrap();
     for (i, sample) in visual_signal.iter().enumerate() {
         let mbti = MBTI {
-            indicator: classifiers[i],
+            indicator: data_y[i],
         };
         let label: String = mbti.to_string();
         let mut row: Vec<Value> = Vec::new();
@@ -2062,26 +2135,26 @@ fn main() -> Result<(), Error> {
     tally(&classifiers);
     // Build sets for an ensemble of models
     let (ie_corpus, ie_classifiers, ie_labels) = build_sets(
-        &corpus,
-        &classifiers,
+        &validate_x,
+        &validate_y,
         indicator::mb_flag::I,
         indicator::mb_flag::E,
     );
     let (ns_corpus, ns_classifiers, ns_labels) = build_sets(
-        &corpus,
-        &classifiers,
+        &validate_x,
+        &validate_y,
         indicator::mb_flag::N,
         indicator::mb_flag::S,
     );
     let (tf_corpus, tf_classifiers, tf_labels) = build_sets(
-        &corpus,
-        &classifiers,
+        &validate_x,
+        &validate_y,
         indicator::mb_flag::T,
         indicator::mb_flag::F,
     );
     let (jp_corpus, jp_classifiers, jp_labels) = build_sets(
-        &corpus,
-        &classifiers,
+        &validate_x,
+        &validate_y,
         indicator::mb_flag::J,
         indicator::mb_flag::P,
     );
@@ -2130,11 +2203,13 @@ fn main() -> Result<(), Error> {
             println! {"Training SVM model for {}", trees[i]};
             let ensemble_x = ensemble[i].0.clone();
             let ensemble_y = ensemble[i].1.clone();
-            train(
-                &ensemble_x[0..2000].to_vec(),
-                &ensemble_y[0..2000].to_vec(),
-                &trees[i],
-            );
+            // Potentially limit ensemble training size here with below:
+            // train(
+            //     &ensemble_x[0..2000].to_vec(),
+            //     &ensemble_y[0..2000].to_vec(),
+            //     &trees[i],
+            // );
+            train(&ensemble_x, &ensemble_y, &trees[i]);
             let svm: SVC<f64, DenseMatrix<f64>, LinearKernel> = {
                 let mut buf: Vec<u8> = Vec::new();
                 File::open(path_model)
@@ -2159,31 +2234,40 @@ fn main() -> Result<(), Error> {
     let mut ensemble_pred: [Vec<f64>; 4] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
     let mut ensemble_y_test: [Vec<f64>; 4] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
     for (i, model) in models.iter().enumerate() {
-        let x = DenseMatrix::from_2d_vec(&ensemble[i].0[0..2000].to_vec());
-        let y = ensemble[i].1[0..2000]
+        // Also limit the data set here.
+        // let x_validate = DenseMatrix::from_2d_vec(&ensemble[i].0[0..5000].to_vec());
+        let x_validate = DenseMatrix::from_2d_vec(&ensemble[i].0);
+        // let y_validate = ensemble[i].1[0..5000]
+        let y_validate = ensemble[i]
+            .1
             .to_vec()
             .iter()
-            .map(|x| *x as f64)
+            .map(|y| *y as f64)
             .collect::<Vec<f64>>();
-        let (_x_train, x_test, _y_train, y_test) = train_test_split(&x, &y, 0.2, false);
+        let (_x_train, x_test, _y_train, y_test) =
+            train_test_split(&x_validate, &y_validate, 0.2, false);
         ensemble_pred[i] = model.predict(&x_test).unwrap();
-        let original_label_ie = ensemble[0].2[1600..2000]
-            .to_vec()
+        // let original_label_ie = ensemble[0].2[4000..5000].to_vec()
+        let original_label_ie = ensemble[0]
+            .2
             .iter()
             .map(|x| (MBTI { indicator: *x }).to_string().chars().nth(0).unwrap())
             .collect::<Vec<char>>();
-        let original_label_ns: Vec<char> = ensemble[1].2[1600..2000]
-            .to_vec()
+        // let original_label_ns: Vec<char> = ensemble[1].2[4000..5000].to_vec()
+        let original_label_ns: Vec<char> = ensemble[1]
+            .2
             .iter()
             .map(|x| (MBTI { indicator: *x }).to_string().chars().nth(1).unwrap())
             .collect::<Vec<char>>();
-        let original_label_tf: Vec<char> = ensemble[2].2[1600..2000]
-            .to_vec()
+        // let original_label_tf: Vec<char> = ensemble[2].2[4000..5000].to_vec()
+        let original_label_tf: Vec<char> = ensemble[2]
+            .2
             .iter()
             .map(|x| (MBTI { indicator: *x }).to_string().chars().nth(2).unwrap())
             .collect::<Vec<char>>();
-        let original_label_jp: Vec<char> = ensemble[3].2[1600..2000]
-            .to_vec()
+        // let original_label_jp: Vec<char> = ensemble[3].2[4000..5000].to_vec()
+        let original_label_jp: Vec<char> = ensemble[3]
+            .2
             .iter()
             .map(|x| (MBTI { indicator: *x }).to_string().chars().nth(3).unwrap())
             .collect::<Vec<char>>();
@@ -2308,7 +2392,7 @@ fn main() -> Result<(), Error> {
     // These are our target class labels
     let y: Vec<f64> = classifiers.into_iter().map(|x| x as f64).collect();
     // Split bag into training/test (80%/20%)
-    let (_x_train, x_test, _y_train, y_test) = train_test_split(&x, &y, 0.2, true);
+    let (_x_train, x_test, _y_train, y_test) = train_test_split(&x, &y, 0.22222222222, true);
     println!(
         "Generic Random Forest accuracy: {}",
         accuracy(&y_test, &rf.predict(&x_test).unwrap())
