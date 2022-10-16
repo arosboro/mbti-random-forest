@@ -19,6 +19,9 @@ const PATH_NORMALIZED_VISUAL_SIGNAL: &str = "./normalized_visual_signal.bincode"
 const PATH_MBTI_SAMPLES_JSON: &str = "./mbti_samples.json";
 const PATH_OVERALL_VISUAL: &str = "./overall_visual.bincode";
 
+const VALIDATE: bool = false;
+const FULL_POLARITY: bool = true;
+
 pub fn visualization_json() -> () {
     let path_classifiers1 = Path::new(PATH_CLASSIFIERS_VALIDATED);
     let data_y: Vec<u8> = bincode::deserialize(&load_bytes(path_classifiers1)).unwrap();
@@ -41,8 +44,9 @@ pub fn visualization_json() -> () {
         Vec::new(),
         Vec::new(),
     ];
-    let normalized_path = Path::new(PATH_NORMALIZED_VISUAL_SIGNAL);
+    let normalized_path = Path::new("./normalized_visual_signal.bincode");
     let visual_signal: Vec<Vec<f64>> = bincode::deserialize(&load_bytes(normalized_path)).unwrap();
+
     let save_sample_to_dir = |sample: Vec<f64>, idx: usize, id: usize, dir: &str| {
         let mut path = PathBuf::from(dir);
         path.push(format!("{}/{}.png", idx, id));
@@ -61,8 +65,7 @@ pub fn visualization_json() -> () {
             .expect("The sample image could not be saved to ./visual_signal.");
     };
     for (i, sample) in visual_signal.iter().enumerate() {
-        let segment: DMatrix<f64> =
-            DMatrix::from_fn(16, 16, |y, x| *sample.get((y * 16 + x) as usize).unwrap());
+        let segment: DMatrix<f64> = DMatrix::from_fn(16, 16, |y, x| sample.get((y * 16 + x) as usize).unwrap().clone());
         let mbti = MBTI {
             indicator: data_y[i],
         };
@@ -118,11 +121,11 @@ pub fn visualization_json() -> () {
                     MBTI {
                         indicator: mbti.indicator
                     }
-                    .to_string()
+                        .to_string()
                 );
             }
         }
-        if !valid {
+        if !valid && VALIDATE {
             println!("Some indicators are invalid. {}", invalid_reason);
         }
         let mut row: Vec<Value> = Vec::new();
@@ -132,22 +135,22 @@ pub fn visualization_json() -> () {
         }
 
         let idx = match label.as_str() {
-            "ESFJ" => 0,  // "ESFJ",
-            "ESFP" => 1,  // "ESFP",
-            "ESTJ" => 2,  // "ESTJ",
-            "ESTP" => 3,  // "ESTP",
-            "ENFJ" => 4,  // "ENFJ",
-            "ENFP" => 5,  // "ENFP",
-            "ENTJ" => 6,  // "ENTJ",
-            "ENTP" => 7,  // "ENTP",
-            "ISFJ" => 8,  // "ISFJ",
-            "ISFP" => 9,  // "ISFP",
-            "ISTJ" => 10, // "ISTJ",
-            "ISTP" => 11, // "ISTP",
-            "INFJ" => 12, // "INFJ",
-            "INFP" => 13, // "INFP",
-            "INTJ" => 14, // "INTJ",
-            "INTP" => 15, // "INTP",
+            "ENFJ" => 0,  // "ENFJ",
+            "ENFP" => 1,  // "ENFP",
+            "ENTJ" => 2,  // "ENTJ",
+            "ENTP" => 3,  // "ENTP",
+            "ESFJ" => 4,  // "ESFJ",
+            "ESFP" => 5,  // "ESFP",
+            "ESTJ" => 6,  // "ESTJ",
+            "ESTP" => 7,  // "ESTP",
+            "INFJ" => 8,  // "INFJ",
+            "INFP" => 9,  // "INFP",
+            "INTJ" => 10, // "INTJ",
+            "INTP" => 11, // "INTP",
+            "ISFJ" => 12, // "ISFJ",
+            "ISFP" => 13, // "ISFP",
+            "ISTJ" => 14, // "ISTJ",
+            "ISTP" => 15, // "ISTP",
             _ => panic!("Invalid label"),
         };
         data[idx].push(Value::Array(row));
@@ -155,26 +158,27 @@ pub fn visualization_json() -> () {
     }
     for n in 0..16 {
         let label = match n {
-            0 => "ESFJ",
-            1 => "ESFP",
-            2 => "ESTJ",
-            3 => "ESTP",
-            4 => "ENFJ",
-            5 => "ENFP",
-            6 => "ENTJ",
-            7 => "ENTP",
-            8 => "ISFJ",
-            9 => "ISFP",
-            10 => "ISTJ",
-            11 => "ISTP",
-            12 => "INFJ",
-            13 => "INFP",
-            14 => "INTJ",
-            15 => "INTP",
+            0 => "ENFJ",
+            1 => "ENFP",
+            2 => "ENTJ",
+            3 => "ENTP",
+            4 => "ESFJ",
+            5 => "ESFP",
+            6 => "ESTJ",
+            7 => "ESTP",
+            8 => "INFJ",
+            9 => "INFP",
+            10 => "INTJ",
+            11 => "INTP",
+            12 => "ISFJ",
+            13 => "ISFP",
+            14 => "ISTJ",
+            15 => "ISTP",
+
             _ => panic!("Invalid label"),
         };
         println!("label: {}, data {}", label.to_string(), n);
-        map.insert(n.to_string(), Value::Array(data[n].clone()));
+        map.insert(label.to_string(), Value::Array(data[n].clone()));
     }
     let obj = Value::Object(map);
     let mbti_json_path = Path::new(PATH_MBTI_SAMPLES_JSON);
@@ -1011,7 +1015,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             //  (6,0), (6,1), (6,2), (6,3), (6,4), (6,5), (6,6),
                             //  (7,0), (7,1), (7,2), (7,3), (7,4), (7,5), (7,6), (7,7)]
 
-                            if i_height_y.1 >= e_height_y.1
+                            if (i_height_y.1 >= e_height_y.1 || FULL_POLARITY)
                                 && [
                                     (0, 0),
                                     (1, 0),
@@ -1069,7 +1073,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             //  (5,0), (5,1), (5,2), (5,3), (5,4),
                             //  (6,0), (6,1), (6,2), (6,3), (6,4), (6,5),
                             //  (7,0), (7,1), (7,2), (7,3), (7,4), (7,5), (7,6)]
-                            else if i_height_y.1 < e_height_y.1
+                            else if (i_height_y.1 < e_height_y.1 || FULL_POLARITY)
                                 && [
                                     (1, 0),
                                     (2, 0),
@@ -1117,7 +1121,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             //  (5,5), (5,6), (5,7),
                             //  (6,6), (6,7),
                             //  (7,7)]
-                            else if e_height_y.1 > i_height_y.1
+                            else if (e_height_y.1 > i_height_y.1 || FULL_POLARITY)
                                 && [
                                     (0, 0),
                                     (0, 1),
@@ -1172,7 +1176,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             //  (4,5), (4,6), (4,7),
                             //  (5,6), (5,7),
                             //  (6,7)]
-                            else if e_height_y.1 < i_height_y.1
+                            else if (e_height_y.1 < i_height_y.1 || FULL_POLARITY)
                                 && [
                                     (0, 1),
                                     (0, 2),
@@ -1220,7 +1224,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             //  (5,8), (5,9), (5,10),
                             //  (6,8), (6,9),
                             //  (7,8)]
-                            else if s_height_y.1 >= n_height_y.1
+                            else if (s_height_y.1 >= n_height_y.1 || FULL_POLARITY)
                                 && [
                                     (0, 8),
                                     (0, 9),
@@ -1275,7 +1279,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             //  (4,8), (4,9), (4,10),
                             //  (5,8), (5,9),
                             //  (6,8)]
-                            else if s_height_y.1 < n_height_y.1
+                            else if (s_height_y.1 < n_height_y.1 || FULL_POLARITY)
                                 && [
                                     (0, 8),
                                     (0, 9),
@@ -1323,7 +1327,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             //   (5,10), (5,11), (5,12), (5,13), (5,14), (5,15),
                             //   (6,9), (6,10), (6,11), (6,12), (6,13), (6,14), (6,15),
                             //   (7,8), (7,9), (7,10), (7,11), (7,12), (7,13), (7,14), (7,15)]
-                            else if n_height_y.1 > s_height_y.1
+                            else if (n_height_y.1 > s_height_y.1 || FULL_POLARITY)
                                 && [
                                     (0, 15),
                                     (1, 14),
@@ -1378,7 +1382,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             //  (5,11), (5,12), (5,13), (5,14), (5,15),
                             //  (6,10), (6,11), (6,12), (6,13), (6,14), (6,15),
                             //  (7,9), (7,10), (7,11), (7,12), (7,13), (7,14), (7,15)]
-                            else if n_height_y.1 < s_height_y.1
+                            else if (n_height_y.1 < s_height_y.1 || FULL_POLARITY)
                                 && [
                                     (1, 15),
                                     (2, 14),
@@ -1426,7 +1430,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             //  (13,0), (13,1), (13,2),
                             //  (14,0), (14,1),
                             //  (15,0)]
-                            else if t_height_y.1 >= f_height_y.1
+                            else if (t_height_y.1 >= f_height_y.1 || FULL_POLARITY)
                                 && [
                                     (8, 0),
                                     (8, 1),
@@ -1481,7 +1485,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             //  (12,0), (12,1), (12,2),
                             //  (13,0), (13,1),
                             //  (14,0)]
-                            else if t_height_y.1 < f_height_y.1
+                            else if (t_height_y.1 < f_height_y.1 || FULL_POLARITY)
                                 && [
                                     (8, 0),
                                     (8, 1),
@@ -1529,7 +1533,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             //  (13,2), (13,3), (13,4), (13,5), (13,6), (13,7),
                             //  (14,1), (14,2), (14,3), (14,4), (14,5), (14,6), (14,7),
                             //  (15,0), (15,1), (15,2), (15,3), (15,4), (15,5), (15,6), (15,7)]
-                            else if f_height_y.1 > t_height_y.1
+                            else if (f_height_y.1 > t_height_y.1 || FULL_POLARITY)
                                 && [
                                     (8, 7),
                                     (9, 6),
@@ -1584,7 +1588,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             //  (13,3), (13,4), (13,5), (13,6), (13,7),
                             //  (14,2), (14,3), (14,4), (14,5), (14,6), (14,7),
                             //  (15,1), (15,2), (15,3), (15,4), (15,5), (15,6), (15,7)]
-                            else if f_height_y.1 < t_height_y.1
+                            else if (f_height_y.1 < t_height_y.1 || FULL_POLARITY)
                                 && [
                                     (9, 7),
                                     (10, 6),
@@ -1632,7 +1636,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             //  (13,8), (13,9), (13,10), (13,11), (13,12), (13,13),
                             //  (14,8), (14,9), (14,10), (14,11), (14,12), (14,13), (14,14),
                             //  (15,8), (15,9), (15,10), (15,11), (15,12), (15,13), (15,14), (15,15)]
-                            else if j_height_y.1 >= p_height_y.1
+                            else if (j_height_y.1 >= p_height_y.1 || FULL_POLARITY)
                                 && [
                                     (8, 8),
                                     (9, 8),
@@ -1687,7 +1691,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             //  (13,8), (13,9), (13,10), (13,11), (13,12),
                             //  (14,8), (14,9), (14,10), (14,11), (14,12), (14,13),
                             //  (15,8), (15,9), (15,10), (15,11), (15,12), (15,13), (15,14)]
-                            else if j_height_y.1 < p_height_y.1
+                            else if (j_height_y.1 < p_height_y.1 || FULL_POLARITY)
                                 && [
                                     (9, 8),
                                     (10, 8),
@@ -1735,7 +1739,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             //  (13,13), (13,14), (13,15),
                             //  14,14), (14,15),
                             //  (15,15)]
-                            else if p_height_y.1 > j_height_y.1
+                            else if (p_height_y.1 > j_height_y.1 || FULL_POLARITY)
                                 && [
                                     (8, 8),
                                     (8, 9),
@@ -1790,7 +1794,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             //  (12,13), (12,14), (12,15),
                             //  (13,14), (13,15),
                             // (14,15)]
-                            else if p_height_y.1 < j_height_y.1
+                            else if (p_height_y.1 < j_height_y.1 || FULL_POLARITY)
                                 && [
                                     (8, 9),
                                     (8, 10),
@@ -1829,7 +1833,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                                     val = 0.0;
                                 }
                             } else {
-                                println!("({}, {})", x, y);
+                                // println!("({}, {})", x, y);
                                 val = 0.0;
                             }
                         } else {
@@ -2118,44 +2122,44 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             let p_height_y = radial_distance_xy(x, y, 225).round() as usize;
                             // This is where I tried to implement a polar area chart.
                             let i_y = if sum_i >= sum_e {
-                                7.0 * sum_e / sum_i * sum_i / sum_i
+                                7.0 * (1.0 - sum_e / sum_i * sum_i / sum_i)
                             } else {
-                                7.0 * sum_i / sum_e * sum_e / sum_e
+                                7.0 * (1.0 - sum_i / sum_e * sum_e / sum_e)
                             };
                             let e_y = if sum_i < sum_e {
-                                7.0 * sum_i / sum_e * sum_e / sum_e
+                                7.0 * (1.0 - sum_i / sum_e * sum_e / sum_e)
                             } else {
-                                7.0 * sum_e / sum_i * sum_i / sum_i
+                                7.0 * (1.0 - sum_e / sum_i * sum_i / sum_i)
                             };
                             let s_y = if sum_s >= sum_n {
-                                8.0 * sum_n / sum_s * sum_s / sum_s
+                                8.0 * (1.0 - sum_n / sum_s * sum_s / sum_s)
                             } else {
-                                8.0 * sum_s / sum_n * sum_n / sum_n
+                                8.0 * (1.0 - sum_s / sum_n * sum_n / sum_n)
                             };
                             let n_y = if sum_s < sum_n {
-                                8.0 * sum_s / sum_n * sum_n / sum_n
+                                8.0 * (1.0 - sum_s / sum_n * sum_n / sum_n)
                             } else {
-                                8.0 * sum_n / sum_s * sum_s / sum_s
+                                8.0 * (1.0 - sum_n / sum_s * sum_s / sum_s)
                             };
                             let t_y = if sum_t >= sum_f {
-                                8.0 * sum_f / sum_t * sum_t / sum_t
+                                8.0 * (1.0 - sum_f / sum_t * sum_t / sum_t)
                             } else {
-                                8.0 * sum_t / sum_f * sum_f / sum_f
+                                8.0 * (1.0 - sum_t / sum_f * sum_f / sum_f)
                             };
                             let f_y = if sum_t < sum_f {
-                                8.0 * sum_t / sum_f * sum_f / sum_f
+                                8.0 * (1.0 - sum_t / sum_f * sum_f / sum_f)
                             } else {
-                                8.0 * sum_f / sum_t * sum_t / sum_t
+                                8.0 * (1.0 - sum_f / sum_t * sum_t / sum_t)
                             };
                             let j_y = if sum_j >= sum_p {
-                                7.0 * sum_p / sum_j * sum_j / sum_j
+                                7.0 * (1.0 - sum_p / sum_j * sum_j / sum_j)
                             } else {
-                                7.0 * sum_j / sum_p * sum_p / sum_p
+                                7.0 * (1.0 - sum_j / sum_p * sum_p / sum_p)
                             };
                             let p_y = if sum_j < sum_p {
-                                7.0 * sum_j / sum_p * sum_p / sum_p
+                                7.0 * (1.0 - sum_j / sum_p * sum_p / sum_p)
                             } else {
-                                7.0 * sum_p / sum_j * sum_j / sum_j
+                                7.0 * (1.0 - sum_p / sum_j * sum_j / sum_j)
                             };
                             (
                                 (i_height_y, i_y as usize),
@@ -3094,7 +3098,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                                     val = 0.0;
                                 }
                             } else {
-                                println!("({}, {})", x, y);
+                                // println!("({}, {})", x, y);
                                 val = 0.0;
                             }
                         } else {
@@ -3241,8 +3245,7 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                         println!("Valid: {}", MBTI { indicator: label }.to_string());
                     }
                 }
-
-                if valid {
+                if valid || !VALIDATE {
                     // Flatten the 2D DMatrix into a 1D Vector.
                     let mut flattened: Vec<f64> = Vec::new();
                     let mut max = segment_normalized2.max();

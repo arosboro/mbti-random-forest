@@ -4,3 +4,5 @@
 **.zip
 **.tar.gz
 **.DS_Store
+visual_signal/**/*.png
+.idea
