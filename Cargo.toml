@@ -16,5 +16,10 @@ regex = "1"
 rust-stemmers = "1.2.0"
 stopwords = "0.1.0"
 ndarray = "0.15.6"
-nalgebra = "0.31.1"
+nalgebra = {version = "0.31.1", features = ["serde-serialize"]}
 libmath = "0.2.1"
+serde_json = "1.0.85"
+rust-bert = "0.19.0"
+rust_decimal = "1.26.1"
+image = "*"
+rust-ml-helpers = { git = "https://github.com/arosboro/rust-ml-helpers.git", branch = "main"}
