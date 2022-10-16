@@ -2116,14 +2116,47 @@ pub fn create_charts() -> (Vec<Vec<f64>>, Vec<u8>) {
                             let f_height_y = radial_distance_xy(x, y, 135).round() as usize;
                             let j_height_y = radial_distance_xy(x, y, 225).round() as usize;
                             let p_height_y = radial_distance_xy(x, y, 225).round() as usize;
-                            let i_y = if sum_i >= sum_e { 7.0 } else { 0.0 };
-                            let e_y = if sum_i < sum_e { 7.0 } else { 0.0 };
-                            let s_y = if sum_s >= sum_n { 8.0 } else { 0.0 };
-                            let n_y = if sum_s < sum_n { 8.0 } else { 0.0 };
-                            let t_y = if sum_t >= sum_f { 8.0 } else { 0.0 };
-                            let f_y = if sum_t < sum_f { 8.0 } else { 0.0 };
-                            let j_y = if sum_j >= sum_p { 7.0 } else { 0.0 };
-                            let p_y = if sum_j < sum_p { 7.0 } else { 0.0 };
+                            // This is where I tried to implement a polar area chart.
+                            let i_y = if sum_i >= sum_e {
+                                7.0 * sum_e / sum_i * sum_i / sum_i
+                            } else {
+                                7.0 * sum_i / sum_e * sum_e / sum_e
+                            };
+                            let e_y = if sum_i < sum_e {
+                                7.0 * sum_i / sum_e * sum_e / sum_e
+                            } else {
+                                7.0 * sum_e / sum_i * sum_i / sum_i
+                            };
+                            let s_y = if sum_s >= sum_n {
+                                8.0 * sum_n / sum_s * sum_s / sum_s
+                            } else {
+                                8.0 * sum_s / sum_n * sum_n / sum_n
+                            };
+                            let n_y = if sum_s < sum_n {
+                                8.0 * sum_s / sum_n * sum_n / sum_n
+                            } else {
+                                8.0 * sum_n / sum_s * sum_s / sum_s
+                            };
+                            let t_y = if sum_t >= sum_f {
+                                8.0 * sum_f / sum_t * sum_t / sum_t
+                            } else {
+                                8.0 * sum_t / sum_f * sum_f / sum_f
+                            };
+                            let f_y = if sum_t < sum_f {
+                                8.0 * sum_t / sum_f * sum_f / sum_f
+                            } else {
+                                8.0 * sum_f / sum_t * sum_t / sum_t
+                            };
+                            let j_y = if sum_j >= sum_p {
+                                7.0 * sum_p / sum_j * sum_j / sum_j
+                            } else {
+                                7.0 * sum_j / sum_p * sum_p / sum_p
+                            };
+                            let p_y = if sum_j < sum_p {
+                                7.0 * sum_j / sum_p * sum_p / sum_p
+                            } else {
+                                7.0 * sum_p / sum_j * sum_j / sum_j
+                            };
                             (
                                 (i_height_y, i_y as usize),
                                 (e_height_y, e_y as usize),
